@@ -6,7 +6,7 @@
 
 <p align="center">
   <a href="https://pkg.go.dev/github.com/usestring/powhttp-mcp"><img src="https://pkg.go.dev/badge/github.com/usestring/powhttp-mcp.svg" alt="Go Reference"></a>
-  <a href="https://github.com/usestring/powhttp-mcp/releases"><img src="https://img.shields.io/github/v/release/durable-alpha/powhttp-mcp" alt="GitHub Release"></a>
+  <a href="https://github.com/usestring/powhttp-mcp/releases"><img src="https://img.shields.io/github/v/release/usestring/powhttp-mcp" alt="GitHub Release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-AGPL%20v3-blue.svg" alt="License: AGPL v3"></a>
 </p>
 
