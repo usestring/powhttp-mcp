@@ -221,6 +221,17 @@ This project is licensed under the GNU Affero General Public License v3.0 - see 
 
 ---
 
+## Acknowledgments
+
+**About String** — [String](https://usestring.ai) ( better website coming soon :) ) extracts structured data from any website at scale. We handle all the code and maintenance.
+
+This project was built during an internal hackathon focused on developer experience tooling. Special thanks to:
+
+- **[Kashif Ghafoor](https://github.com/kashif-ghafoor)** — For his contributions during the hackathon
+- **Florian** — Creator of [powhttp](https://powhttp.com) for implementing the API from a suggestion and being responsive to feedback
+
+---
+
 ## Related Projects
 
 - [powhttp](https://powhttp.com) - HTTP traffic capture and analysis
