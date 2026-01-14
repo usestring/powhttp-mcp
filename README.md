@@ -197,6 +197,15 @@ go test ./...
 
 ---
 
+## Feature Requests & Bug Reports
+
+Have a feature suggestion or found a bug? We'd love to hear from you!
+
+- **Feature Requests**: Open an [issue](https://github.com/usestring/powhttp-mcp/issues/new) with the `enhancement` label
+- **Bug Reports**: Please include steps to reproduce, your environment details, and relevant logs
+
+---
+
 ## Contributing
 
 We use **squash merges** for all pull requests. When creating a PR, ensure the **PR title** follows [Conventional Commits](https://www.conventionalcommits.org/) format, as it will become the commit message:
