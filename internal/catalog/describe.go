@@ -130,6 +130,7 @@ func analyzeHeaders(entries []*client.SessionEntry) []types.HeaderFrequency {
 	}
 
 	headerCounts := make(map[string]int)
+	headerOrder := make(map[string]int)
 
 	for _, entry := range entries {
 		seen := make(map[string]bool)
@@ -139,6 +140,9 @@ func analyzeHeaders(entries []*client.SessionEntry) []types.HeaderFrequency {
 			}
 			name := strings.ToLower(header[0])
 			if !seen[name] {
+				if _, exists := headerCounts[name]; !exists {
+					headerOrder[name] = len(headerOrder)
+				}
 				headerCounts[name]++
 				seen[name] = true
 			}
@@ -155,9 +159,12 @@ func analyzeHeaders(entries []*client.SessionEntry) []types.HeaderFrequency {
 		})
 	}
 
-	// Sort by frequency descending
+	// Sort by frequency descending, then by first occurrence for deterministic order
 	sort.Slice(frequencies, func(i, j int) bool {
-		return frequencies[i].Frequency > frequencies[j].Frequency
+		if frequencies[i].Frequency != frequencies[j].Frequency {
+			return frequencies[i].Frequency > frequencies[j].Frequency
+		}
+		return headerOrder[frequencies[i].Name] < headerOrder[frequencies[j].Name]
 	})
 
 	// Return top headers (limit to reasonable number)

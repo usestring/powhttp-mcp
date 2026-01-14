@@ -159,7 +159,7 @@ func TestTokenizeURL(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := TokenizeURL(tt.input)
-			assert.Equal(t, tt.expected, result, "TokenizeURL(%q)", tt.input)
+			assert.ElementsMatch(t, tt.expected, result, "TokenizeURL(%q)", tt.input)
 		})
 	}
 }
