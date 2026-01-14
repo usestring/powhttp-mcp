@@ -1,0 +1,92 @@
+// Package config provides configuration loading from environment variables.
+package config
+
+import (
+	"os"
+	"strconv"
+	"time"
+)
+
+// Config holds all configuration for the MCP server.
+type Config struct {
+	PowHTTPBaseURL       string        // POWHTTP_BASE_URL, default "http://localhost:7777"
+	PowHTTPProxyURL      string        // POWHTTP_PROXY_URL, default "http://127.0.0.1:8890"
+	HTTPClientTimeout    time.Duration // HTTP_CLIENT_TIMEOUT_MS, default 10000ms (10s)
+	RefreshTimeout       time.Duration // REFRESH_TIMEOUT_MS, default 15000ms (15s)
+	RefreshInterval      time.Duration // REFRESH_INTERVAL_MS, default 2000ms (2s)
+	FreshnessThreshold   time.Duration // FRESHNESS_THRESHOLD_MS, default 500ms
+	BootstrapTailLimit   int           // BOOTSTRAP_TAIL_LIMIT, default 20000
+	FetchWorkers         int           // FETCH_WORKERS, default 16
+	ToolMaxBytesDefault  int           // TOOL_MAX_BYTES_DEFAULT, default 2_000_000
+	TLSMaxEventsDefault  int           // TLS_MAX_EVENTS_DEFAULT, default 200
+	H2MaxEventsDefault   int           // H2_MAX_EVENTS_DEFAULT, default 200
+	EntryCacheMaxItems   int           // ENTRY_CACHE_MAX_ITEMS, default 512
+	ResourceMaxBodyBytes int           // RESOURCE_MAX_BODY_BYTES, default 65536 (64KB)
+
+	// Logging configuration
+	LogLevel      string // LOG_LEVEL, default "info"
+	LogFile       string // LOG_FILE, default "" (stderr only)
+	LogMaxSizeMB  int    // LOG_MAX_SIZE_MB, default 10
+	LogMaxBackups int    // LOG_MAX_BACKUPS, default 3
+	LogMaxAgeDays int    // LOG_MAX_AGE_DAYS, default 28
+	LogCompress   bool   // LOG_COMPRESS, default true
+}
+
+// Load reads configuration from environment variables with sensible defaults.
+func Load() *Config {
+	return &Config{
+		PowHTTPBaseURL:       getEnvString("POWHTTP_BASE_URL", "http://localhost:7777"),
+		PowHTTPProxyURL:      getEnvString("POWHTTP_PROXY_URL", "http://127.0.0.1:8890"),
+		HTTPClientTimeout:    getEnvDurationMs("HTTP_CLIENT_TIMEOUT_MS", 10000),
+		RefreshTimeout:       getEnvDurationMs("REFRESH_TIMEOUT_MS", 15000),
+		RefreshInterval:      getEnvDurationMs("REFRESH_INTERVAL_MS", 2000),
+		FreshnessThreshold:   getEnvDurationMs("FRESHNESS_THRESHOLD_MS", 500),
+		BootstrapTailLimit:   getEnvInt("BOOTSTRAP_TAIL_LIMIT", 20000),
+		FetchWorkers:         getEnvInt("FETCH_WORKERS", 16),
+		ToolMaxBytesDefault:  getEnvInt("TOOL_MAX_BYTES_DEFAULT", 2_000_000),
+		TLSMaxEventsDefault:  getEnvInt("TLS_MAX_EVENTS_DEFAULT", 200),
+		H2MaxEventsDefault:   getEnvInt("H2_MAX_EVENTS_DEFAULT", 200),
+		EntryCacheMaxItems:   getEnvInt("ENTRY_CACHE_MAX_ITEMS", 512),
+		ResourceMaxBodyBytes: getEnvInt("RESOURCE_MAX_BODY_BYTES", 65536),
+
+		LogLevel:      getEnvString("LOG_LEVEL", "info"),
+		LogFile:       getEnvString("LOG_FILE", ""),
+		LogMaxSizeMB:  getEnvInt("LOG_MAX_SIZE_MB", 10),
+		LogMaxBackups: getEnvInt("LOG_MAX_BACKUPS", 5),
+		LogMaxAgeDays: getEnvInt("LOG_MAX_AGE_DAYS", 28),
+		LogCompress:   getEnvBool("LOG_COMPRESS", true),
+	}
+}
+
+func getEnvBool(key string, defaultVal bool) bool {
+	if v := os.Getenv(key); v != "" {
+		switch v {
+		case "1", "true", "yes", "on":
+			return true
+		case "0", "false", "no", "off":
+			return false
+		}
+	}
+	return defaultVal
+}
+
+func getEnvString(key, defaultVal string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return defaultVal
+}
+
+func getEnvInt(key string, defaultVal int) int {
+	if v := os.Getenv(key); v != "" {
+		if i, err := strconv.Atoi(v); err == nil {
+			return i
+		}
+	}
+	return defaultVal
+}
+
+func getEnvDurationMs(key string, defaultMs int) time.Duration {
+	ms := getEnvInt(key, defaultMs)
+	return time.Duration(ms) * time.Millisecond
+}

@@ -1,0 +1,74 @@
+package tools
+
+import (
+	"context"
+
+	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/usestring/powhttp-mcp/pkg/types"
+)
+
+// TraceFlowInput is the input for powhttp_trace_flow.
+type TraceFlowInput struct {
+	SessionID   string            `json:"session_id,omitempty" jsonschema:"Session ID (default: active)"`
+	SeedEntryID string            `json:"seed_entry_id" jsonschema:"required,Seed entry ID for tracing"`
+	MaxDepth    int               `json:"max_depth,omitempty" jsonschema:"Max graph depth (default: 50)"`
+	Options     *TraceFlowOptions `json:"options,omitempty" jsonschema:"Tracing options"`
+	Limit       int               `json:"limit,omitempty" jsonschema:"Max nodes to return (default: 50)"`
+}
+
+// TraceFlowOptions controls flow tracing behavior.
+type TraceFlowOptions struct {
+	TimeWindowMs int64 `json:"time_window_ms,omitempty" jsonschema:"Time window (ms, default: 120000)"`
+	SamePIDOnly  bool  `json:"same_pid_only,omitempty" jsonschema:"Same PID only (default: true)"`
+	SameHostOnly bool  `json:"same_host_only,omitempty" jsonschema:"Same host only (default: true)"`
+}
+
+// TraceFlowOutput is the output for powhttp_trace_flow.
+type TraceFlowOutput struct {
+	Graph    *types.FlowGraph   `json:"graph"`
+	Resource *types.ResourceRef `json:"resource,omitempty"`
+}
+
+// ToolTraceFlow traces request flow.
+func ToolTraceFlow(d *Deps) func(ctx context.Context, req *sdkmcp.CallToolRequest, input TraceFlowInput) (*sdkmcp.CallToolResult, TraceFlowOutput, error) {
+	return func(ctx context.Context, req *sdkmcp.CallToolRequest, input TraceFlowInput) (*sdkmcp.CallToolResult, TraceFlowOutput, error) {
+		if input.SeedEntryID == "" {
+			return nil, TraceFlowOutput{}, ErrInvalidInput("seed_entry_id is required")
+		}
+
+		sessionID := input.SessionID
+		if sessionID == "" {
+			sessionID = "active"
+		}
+
+		traceReq := &types.TraceRequest{
+			SessionID:   sessionID,
+			SeedEntryID: input.SeedEntryID,
+			MaxDepth:    input.MaxDepth,
+			Limit:       input.Limit,
+		}
+
+		if input.Options != nil {
+			traceReq.Options = &types.TraceOptions{
+				TimeWindowMs: input.Options.TimeWindowMs,
+				SamePIDOnly:  input.Options.SamePIDOnly,
+				SameHostOnly: input.Options.SameHostOnly,
+			}
+		}
+
+		graph, err := d.Flow.Trace(ctx, traceReq)
+		if err != nil {
+			return nil, TraceFlowOutput{}, WrapPowHTTPError(err)
+		}
+
+		return nil, TraceFlowOutput{
+			Graph: graph,
+			Resource: &types.ResourceRef{
+				URI:  "powhttp://flow/" + input.SeedEntryID,
+				MIME: MimeJSON,
+				Hint: "Fetch for raw flow graph data export",
+			},
+		}, nil
+	}
+}
