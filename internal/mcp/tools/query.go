@@ -24,27 +24,23 @@ type QueryBodyInput struct {
 	MaxResults  int      `json:"max_results,omitempty" jsonschema:"Max results to return (default: 1000)"`
 }
 
-// QueryBodyOutput is the output for powhttp_query_body.
-// Uses types from pkg/types for external tool compatibility.
-type QueryBodyOutput = types.QueryResponse
-
 // ToolQueryBody queries HTTP entry bodies using JQ expressions.
-func ToolQueryBody(d *Deps) func(ctx context.Context, req *sdkmcp.CallToolRequest, input QueryBodyInput) (*sdkmcp.CallToolResult, QueryBodyOutput, error) {
+func ToolQueryBody(d *Deps) func(ctx context.Context, req *sdkmcp.CallToolRequest, input QueryBodyInput) (*sdkmcp.CallToolResult, types.QueryResponse, error) {
 	engine := query.NewEngine()
 
-	return func(ctx context.Context, req *sdkmcp.CallToolRequest, input QueryBodyInput) (*sdkmcp.CallToolResult, QueryBodyOutput, error) {
+	return func(ctx context.Context, req *sdkmcp.CallToolRequest, input QueryBodyInput) (*sdkmcp.CallToolResult, types.QueryResponse, error) {
 		// Validate required input
 		if input.Expression == "" {
-			return nil, QueryBodyOutput{}, ErrInvalidInput("expression is required")
+			return nil, types.QueryResponse{}, ErrInvalidInput("expression is required")
 		}
 
 		if input.ClusterID == "" && len(input.EntryIDs) == 0 {
-			return nil, QueryBodyOutput{}, ErrInvalidInput("either cluster_id or entry_ids is required")
+			return nil, types.QueryResponse{}, ErrInvalidInput("either cluster_id or entry_ids is required")
 		}
 
 		// Validate expression first
 		if err := engine.ValidateExpression(input.Expression); err != nil {
-			return nil, QueryBodyOutput{}, ErrInvalidInput(err.Error())
+			return nil, types.QueryResponse{}, ErrInvalidInput(err.Error())
 		}
 
 		sessionID := input.SessionID
@@ -57,7 +53,7 @@ func ToolQueryBody(d *Deps) func(ctx context.Context, req *sdkmcp.CallToolReques
 			target = "response"
 		}
 		if target != "request" && target != "response" && target != "both" {
-			return nil, QueryBodyOutput{}, ErrInvalidInput("target must be 'request', 'response', or 'both'")
+			return nil, types.QueryResponse{}, ErrInvalidInput("target must be 'request', 'response', or 'both'")
 		}
 
 		// Collect entry IDs
@@ -65,7 +61,7 @@ func ToolQueryBody(d *Deps) func(ctx context.Context, req *sdkmcp.CallToolReques
 		if input.ClusterID != "" {
 			stored, ok := d.ClusterStore.GetCluster(input.ClusterID)
 			if !ok {
-				return nil, QueryBodyOutput{}, ErrNotFound("cluster", input.ClusterID)
+				return nil, types.QueryResponse{}, ErrNotFound("cluster", input.ClusterID)
 			}
 			entryIDs = stored.EntryIDs
 		} else {
@@ -92,7 +88,7 @@ func ToolQueryBody(d *Deps) func(ctx context.Context, req *sdkmcp.CallToolReques
 		}
 
 		// Collect bodies and process
-		output := QueryBodyOutput{
+		output := types.QueryResponse{
 			Summary: types.QuerySummary{
 				Deduplicated: input.Deduplicate,
 			},
@@ -157,7 +153,7 @@ func ToolQueryBody(d *Deps) func(ctx context.Context, req *sdkmcp.CallToolReques
 		if len(allBodies) > 0 {
 			result, err := engine.QueryMultipleWithLabels(allBodies, bodyLabels, input.Expression, input.Deduplicate, maxResults)
 			if err != nil {
-				return nil, QueryBodyOutput{}, ErrInvalidInput(err.Error())
+				return nil, types.QueryResponse{}, ErrInvalidInput(err.Error())
 			}
 
 			output.Values = result.Values
