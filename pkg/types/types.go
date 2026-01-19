@@ -41,8 +41,9 @@ type HTTP2Summary struct {
 
 // SizeSummary contains request/response body size information.
 type SizeSummary struct {
-	ReqBodyBytes  int `json:"req_body_bytes"`
-	RespBodyBytes int `json:"resp_body_bytes"`
+	ReqBodyBytes    int    `json:"req_body_bytes"`
+	RespBodyBytes   int    `json:"resp_body_bytes"`
+	RespContentType string `json:"resp_content_type,omitempty"` // e.g., "application/json"
 }
 
 // ResourceRef points to an MCP resource.
