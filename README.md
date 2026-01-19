@@ -68,7 +68,8 @@ Add to your `.cursor/mcp.json`:
     "powhttp": {
       "command": "powhttp-mcp",
       "env": {
-        "POWHTTP_BASE_URL": "http://localhost:7777"
+        "POWHTTP_BASE_URL": "http://localhost:7777",
+        "POWHTTP_PROXY_URL": "http://localhost:8888"
       }
     }
   }
@@ -85,11 +86,20 @@ Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_
     "powhttp": {
       "command": "powhttp-mcp",
       "env": {
-        "POWHTTP_BASE_URL": "http://localhost:7777"
+        "POWHTTP_BASE_URL": "http://localhost:7777",
+        "POWHTTP_PROXY_URL": "http://localhost:8888"
       }
     }
   }
 }
+```
+
+### Connecting to Claude Code
+
+Add using the CLI:
+
+```bash
+claude mcp add powhttp -e POWHTTP_BASE_URL=http://localhost:7777 -e POWHTTP_PROXY_URL=http://localhost:8888 -- powhttp-mcp
 ```
 
 The generated scraper running successfully:
