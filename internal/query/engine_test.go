@@ -257,3 +257,82 @@ func TestEngine_Query_ReturnsErrors(t *testing.T) {
 	assert.Empty(t, result.Values)
 	assert.Len(t, result.Errors, 1) // But we get a runtime error in results
 }
+
+func TestEngine_QueryMultipleWithLabels_MatchedIndices(t *testing.T) {
+	engine := NewEngine()
+
+	dataList := [][]byte{
+		[]byte(`{"items": [{"name": "a"}]}`),          // index 0: has values
+		[]byte(`{"other": "no items"}`),               // index 1: no values (null path)
+		[]byte(`{"items": [{"name": "b"}]}`),          // index 2: has values
+		[]byte(`{"items": []}`),                       // index 3: empty array, no values
+	}
+	labels := []string{"entry-1:response", "entry-2:response", "entry-3:response", "entry-4:response"}
+
+	result, err := engine.QueryMultipleWithLabels(dataList, labels, ".items[].name", false, 0)
+	require.NoError(t, err)
+	assert.Equal(t, []any{"a", "b"}, result.Values)
+
+	// Only indices 0 and 2 should be in MatchedIndices (they produced values)
+	assert.ElementsMatch(t, []int{0, 2}, result.MatchedIndices)
+}
+
+func TestEngine_QueryMultipleWithLabels_LabelCounts(t *testing.T) {
+	engine := NewEngine()
+
+	dataList := [][]byte{
+		[]byte(`{"items": [{"name": "a"}, {"name": "b"}, {"name": "c"}]}`), // 3 values
+		[]byte(`{"items": [{"name": "d"}]}`),                               // 1 value
+		[]byte(`{"items": [{"name": "e"}, {"name": "f"}]}`),                // 2 values
+	}
+	labels := []string{"entry-1:response", "entry-2:response", "entry-3:response"}
+
+	result, err := engine.QueryMultipleWithLabels(dataList, labels, ".items[].name", false, 0)
+	require.NoError(t, err)
+	assert.Equal(t, 6, result.RawCount)
+
+	// Check per-label counts
+	assert.Equal(t, 3, result.LabelCounts["entry-1:response"])
+	assert.Equal(t, 1, result.LabelCounts["entry-2:response"])
+	assert.Equal(t, 2, result.LabelCounts["entry-3:response"])
+}
+
+func TestEngine_QueryMultipleWithLabels_LabelCounts_WithDedup(t *testing.T) {
+	engine := NewEngine()
+
+	dataList := [][]byte{
+		[]byte(`{"items": [{"name": "a"}, {"name": "a"}]}`), // 2 raw, 1 unique
+		[]byte(`{"items": [{"name": "a"}, {"name": "b"}]}`), // 2 raw, 1 new unique (b)
+	}
+	labels := []string{"entry-1:response", "entry-2:response"}
+
+	result, err := engine.QueryMultipleWithLabels(dataList, labels, ".items[].name", true, 0)
+	require.NoError(t, err)
+	assert.Equal(t, []any{"a", "b"}, result.Values)
+	assert.Equal(t, 4, result.RawCount) // Total raw count
+
+	// LabelCounts still tracks all values found (before dedup)
+	assert.Equal(t, 2, result.LabelCounts["entry-1:response"])
+	assert.Equal(t, 2, result.LabelCounts["entry-2:response"])
+}
+
+func TestEngine_QueryMultipleWithLabels_MatchedIndices_TwoDigits(t *testing.T) {
+	engine := NewEngine()
+
+	// Create 15 bodies, with values at indices 0, 5, and 12
+	dataList := make([][]byte, 15)
+	labels := make([]string, 15)
+	for i := 0; i < 15; i++ {
+		if i == 0 || i == 5 || i == 12 {
+			dataList[i] = []byte(`{"value": "found"}`)
+		} else {
+			dataList[i] = []byte(`{"other": "nothing"}`)
+		}
+		labels[i] = "entry-" + string(rune('A'+i)) + ":response"
+	}
+
+	result, err := engine.QueryMultipleWithLabels(dataList, labels, ".value", false, 0)
+	require.NoError(t, err)
+	assert.Equal(t, 3, len(result.Values))
+	assert.ElementsMatch(t, []int{0, 5, 12}, result.MatchedIndices)
+}

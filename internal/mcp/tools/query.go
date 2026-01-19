@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/base64"
+	"fmt"
 	"strings"
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -160,8 +161,23 @@ func ToolQueryBody(d *Deps) func(ctx context.Context, req *sdkmcp.CallToolReques
 			output.Errors = append(output.Errors, result.Errors...)
 			output.Summary.TotalValues = result.RawCount
 			output.Summary.UniqueValues = len(result.Values)
-			output.Summary.EntriesMatched = countMatchedBodies(allBodies, result.RawCount)
+			output.Summary.EntriesMatched = len(result.MatchedIndices)
 			output.Summary.Truncated = len(result.Values) >= maxResults || truncatedEntries
+
+			// Populate entries for non-skipped bodies with their value counts
+			for _, label := range bodyLabels {
+				parts := strings.SplitN(label, ":", 2)
+				if len(parts) != 2 {
+					continue
+				}
+				entryID, entryTarget := parts[0], parts[1]
+				valueCount := result.LabelCounts[label]
+				output.Entries = append(output.Entries, types.QueryEntryResult{
+					EntryID:    entryID,
+					Target:     entryTarget,
+					ValueCount: valueCount,
+				})
+			}
 		}
 
 		// Add helpful hints
@@ -169,7 +185,7 @@ func ToolQueryBody(d *Deps) func(ctx context.Context, req *sdkmcp.CallToolReques
 			output.Hints = append(output.Hints, "No values matched. Try a simpler expression like '.' to see the full structure.")
 		}
 		if input.Deduplicate && output.Summary.TotalValues > output.Summary.UniqueValues {
-			output.Hints = append(output.Hints, "Deduplication removed "+string(rune(output.Summary.TotalValues-output.Summary.UniqueValues+'0'))+" duplicate values.")
+			output.Hints = append(output.Hints, fmt.Sprintf("Deduplication removed %d duplicate values.", output.Summary.TotalValues-output.Summary.UniqueValues))
 		}
 		if output.Summary.Truncated {
 			output.Hints = append(output.Hints, "Results were truncated. Use filters or increase max_results.")
@@ -213,11 +229,3 @@ func extractBody(entry *client.SessionEntry, target string) ([]byte, bool, strin
 	return bodyBytes, false, ""
 }
 
-// countMatchedBodies estimates how many bodies had matches based on total values.
-func countMatchedBodies(bodies [][]byte, totalValues int) int {
-	if totalValues == 0 {
-		return 0
-	}
-	// Simple estimation - at least 1, at most all bodies
-	return min(totalValues, len(bodies))
-}

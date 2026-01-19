@@ -2,13 +2,6 @@
 // These types are used across multiple packages and are designed for external consumption.
 package types
 
-// ToolError represents a structured error response for MCP tools.
-type ToolError struct {
-	Code    string `json:"code"` // NOT_FOUND, POWHTTP_ERROR, INVALID_INPUT, TIMEOUT
-	Message string `json:"message"`
-	Details any    `json:"details,omitempty"`
-}
-
 // EntrySummary is a compact entry representation for search results.
 type EntrySummary struct {
 	EntryID     string       `json:"entry_id"`

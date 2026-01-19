@@ -20,9 +20,11 @@ func NewEngine() *Engine {
 
 // QueryResult contains the results of a JQ query.
 type QueryResult struct {
-	Values   []any    `json:"values"`            // Extracted values
-	Errors   []string `json:"errors,omitempty"`  // Per-item errors (e.g., type mismatch)
-	RawCount int      `json:"raw_count"`         // Count before deduplication
+	Values         []any          `json:"values"`                     // Extracted values
+	Errors         []string       `json:"errors,omitempty"`           // Per-item errors (e.g., type mismatch)
+	RawCount       int            `json:"raw_count"`                  // Count before deduplication
+	MatchedIndices []int          `json:"matched_indices,omitempty"`  // Indices of inputs that produced values
+	LabelCounts    map[string]int `json:"label_counts,omitempty"`     // Value count per label
 }
 
 // Query executes a JQ expression against JSON data.
@@ -114,12 +116,14 @@ func (e *Engine) QueryMultipleWithLabels(dataList [][]byte, labels []string, exp
 	}
 
 	result := &QueryResult{
-		Values: make([]any, 0),
-		Errors: make([]string, 0),
+		Values:      make([]any, 0),
+		Errors:      make([]string, 0),
+		LabelCounts: make(map[string]int),
 	}
 
 	seen := make(map[string]bool)
 	seenErrors := make(map[string]bool) // Deduplicate similar errors
+	matchedSet := make(map[int]bool)    // Track which indices produced values
 
 	for i, data := range dataList {
 		if maxResults > 0 && len(result.Values) >= maxResults {
@@ -171,6 +175,12 @@ func (e *Engine) QueryMultipleWithLabels(dataList [][]byte, labels []string, exp
 			}
 
 			result.RawCount++
+			result.LabelCounts[label]++
+
+			// Track that this index produced a value
+			if !matchedSet[i] {
+				matchedSet[i] = true
+			}
 
 			// Handle deduplication
 			if deduplicate {
@@ -183,6 +193,11 @@ func (e *Engine) QueryMultipleWithLabels(dataList [][]byte, labels []string, exp
 
 			result.Values = append(result.Values, v)
 		}
+	}
+
+	// Convert matched set to slice
+	for idx := range matchedSet {
+		result.MatchedIndices = append(result.MatchedIndices, idx)
 	}
 
 	return result, nil
