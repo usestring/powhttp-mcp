@@ -1,7 +1,5 @@
 package types
 
-import "github.com/invopop/jsonschema"
-
 // ClusterKey is the composite key for clustering: host + method + path_template.
 type ClusterKey struct {
 	Host         string
@@ -95,7 +93,10 @@ type QueryKeyAnalysis struct {
 
 // RequestBodySchema describes the JSON Schema of request bodies.
 type RequestBodySchema struct {
-	Schema      *jsonschema.Schema `json:"schema"`                 // JSON Schema (Draft 2020-12)
+	// JSON Schema is dynamic, could probably type but will cause import cycle
+	// We dont access any fields etc so will not worry for now
+	// TODO: enforce strict typing
+	Schema      any    `json:"schema"`                 
 	SampleCount int    `json:"sample_count"`           // Number of samples used
 	AllMatch    bool   `json:"all_match"`              // True if all samples had identical schema
 	ContentType string `json:"content_type,omitempty"` // Content-Type of the bodies
