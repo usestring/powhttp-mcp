@@ -40,14 +40,6 @@ func Setup(cfg Config) (func() error, error) {
 
 	opts := &slog.HandlerOptions{
 		Level: level,
-		ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
-			// Use standard log level format: [INFO], [ERROR], etc.
-			if a.Key == slog.LevelKey {
-				levelVal := a.Value.Any().(slog.Level)
-				a.Value = slog.StringValue("[" + levelVal.String() + "]")
-			}
-			return a
-		},
 	}
 
 	var writer io.Writer

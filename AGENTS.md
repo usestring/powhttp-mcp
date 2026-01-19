@@ -30,22 +30,16 @@
 - Keep functions focused and small
 - Write clear comments for complex logic
 
-### Type Assertions
-
-- Avoid using `as` type casting (TypeScript pattern)
-- Use Go type assertions with comma-ok idiom: `value, ok := x.(Type)`
-
 ### Logging
 
 - No emojis in log output or code comments
-- Use standard log level prefixes: `[INFO]`, `[WARNING]`, `[ERROR]`
-- Follow professional Rust-style commenting standards
 - Keep comments technical and informative
 
 ### Error Handling
 
 - Always check errors
 - Provide context when wrapping errors
+- Use `errors.Is`/`errors.As` for error checking
 - Use coded errors for MCP tool responses (see `internal/mcp/tools/errors.go`)
 
 ## Key Directories
