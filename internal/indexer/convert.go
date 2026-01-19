@@ -74,10 +74,11 @@ func FromSessionEntry(entry *client.SessionEntry) *EntryMeta {
 		meta.SetCookies = extractSetCookies(entry.Response.Headers)
 	}
 
-	// Body sizes
+	// Body sizes and content type
 	meta.ReqBodyBytes = computeBodySize(entry.Request.Body)
 	if entry.Response != nil {
 		meta.RespBodyBytes = computeBodySize(entry.Response.Body)
+		meta.RespContentType = normalizeContentType(entry.Response.Headers.Get("content-type"))
 	}
 
 	return meta
@@ -293,4 +294,19 @@ func computeBodySize(encoded *string) int {
 	}
 
 	return len(actual)
+}
+
+// normalizeContentType extracts the MIME type from a content-type header.
+// Returns just the type without parameters (e.g., "application/json" from "application/json; charset=utf-8").
+func normalizeContentType(contentType string) string {
+	if contentType == "" {
+		return ""
+	}
+
+	// Strip parameters (charset, boundary, etc.)
+	if idx := strings.Index(contentType, ";"); idx != -1 {
+		contentType = contentType[:idx]
+	}
+
+	return strings.TrimSpace(strings.ToLower(contentType))
 }

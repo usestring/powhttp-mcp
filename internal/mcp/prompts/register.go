@@ -6,6 +6,12 @@ import (
 
 // Register registers all prompts with the MCP server.
 func Register(srv *sdkmcp.Server, cfg *Config) {
+	// Prompt 0: Base Prompt (Optimization Guide)
+	srv.AddPrompt(&sdkmcp.Prompt{
+		Name:        "base_prompt",
+		Description: "START HERE: Essential guide for efficient tool usage and token optimization.",
+	}, HandleBasePrompt(cfg))
+
 	// Prompt 1: Compare browser vs program request
 	srv.AddPrompt(&sdkmcp.Prompt{
 		Name:        "compare_browser_program",

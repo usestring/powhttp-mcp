@@ -10,11 +10,12 @@ import (
 
 // SearchEntriesInput is the input for powhttp_search_entries.
 type SearchEntriesInput struct {
-	SessionID string                `json:"session_id,omitempty" jsonschema:"Session ID (default: active)"`
-	Query     string                `json:"query,omitempty" jsonschema:"Free text search query"`
-	Filters   *SearchEntriesFilters `json:"filters,omitempty" jsonschema:"Structured filters"`
-	Limit     int                   `json:"limit,omitempty" jsonschema:"Max results (default: 20, max: 100)"`
-	Offset    int                   `json:"offset,omitempty" jsonschema:"Pagination offset"`
+	SessionID      string                `json:"session_id,omitempty" jsonschema:"Session ID (default: active)"`
+	Query          string                `json:"query,omitempty" jsonschema:"Free text search query"`
+	Filters        *SearchEntriesFilters `json:"filters,omitempty" jsonschema:"Structured filters"`
+	Limit          int                   `json:"limit,omitempty" jsonschema:"Max results (default: 10, max: 100)"`
+	Offset         int                   `json:"offset,omitempty" jsonschema:"Pagination offset"`
+	IncludeDetails bool                  `json:"include_details,omitempty" jsonschema:"Include full details (TLS, HTTP2, Sizes). Default: false"`
 }
 
 // SearchEntriesFilters contains filter criteria for search.
@@ -51,10 +52,15 @@ func ToolSearchEntries(d *Deps) func(ctx context.Context, req *sdkmcp.CallToolRe
 			sessionID = "active"
 		}
 
+		limit := input.Limit
+		if limit <= 0 {
+			limit = 10
+		}
+
 		searchReq := &types.SearchRequest{
 			SessionID: sessionID,
 			Query:     input.Query,
-			Limit:     input.Limit,
+			Limit:     limit,
 			Offset:    input.Offset,
 		}
 
@@ -81,6 +87,22 @@ func ToolSearchEntries(d *Deps) func(ctx context.Context, req *sdkmcp.CallToolRe
 		resp, err := d.Search.Search(ctx, searchReq)
 		if err != nil {
 			return nil, SearchEntriesOutput{}, WrapPowHTTPError(err)
+		}
+
+		// Thin out results if details not requested - keep only essential fields
+		if !input.IncludeDetails {
+			for i := range resp.Results {
+				if resp.Results[i].Summary != nil {
+					// Keep content type hint but zero out heavy fields
+					contentType := resp.Results[i].Summary.Sizes.RespContentType
+					resp.Results[i].Summary.TLS = types.TLSSummary{}
+					resp.Results[i].Summary.HTTP2 = types.HTTP2Summary{}
+					resp.Results[i].Summary.Sizes = types.SizeSummary{RespContentType: contentType}
+					// Zero out process info (can be retrieved via get_entry if needed)
+					resp.Results[i].Summary.ProcessName = ""
+					resp.Results[i].Summary.PID = 0
+				}
+			}
 		}
 
 		return nil, SearchEntriesOutput{

@@ -48,8 +48,9 @@ type DisplayResponse struct {
 
 // BodyTransformOptions controls how bodies are transformed for display.
 type BodyTransformOptions struct {
-	MaxBytes   int
-	SchemaOnly bool
+	MaxBytes       int
+	SchemaOnly     bool
+	IncludeHeaders bool // If false, headers are omitted from output
 }
 
 // TransformBody decodes a base64 body for display.
@@ -158,6 +159,13 @@ func ToDisplayEntry(entry *client.SessionEntry, opts BodyTransformOptions) *Disp
 		respContentType = entry.Response.Headers.Get("content-type")
 	}
 
+	var reqHeaders client.Headers
+	if opts.IncludeHeaders {
+		reqHeaders = entry.Request.Headers
+	} else {
+		reqHeaders = client.Headers{}
+	}
+
 	display := &DisplayEntry{
 		ID:              entry.ID,
 		URL:             entry.URL,
@@ -169,7 +177,7 @@ func ToDisplayEntry(entry *client.SessionEntry, opts BodyTransformOptions) *Disp
 			Method:      entry.Request.Method,
 			Path:        entry.Request.Path,
 			HTTPVersion: entry.Request.HTTPVersion,
-			Headers:     entry.Request.Headers,
+			Headers:     reqHeaders,
 			Body:        TransformBody(entry.Request.Body, reqContentType, opts),
 		},
 		IsWebSocket: entry.IsWebSocket,
@@ -180,11 +188,18 @@ func ToDisplayEntry(entry *client.SessionEntry, opts BodyTransformOptions) *Disp
 	}
 
 	if entry.Response != nil {
+		var respHeaders client.Headers
+		if opts.IncludeHeaders {
+			respHeaders = entry.Response.Headers
+		} else {
+			respHeaders = client.Headers{}
+		}
+
 		display.Response = &DisplayResponse{
 			HTTPVersion: entry.Response.HTTPVersion,
 			StatusCode:  entry.Response.StatusCode,
 			StatusText:  entry.Response.StatusText,
-			Headers:     entry.Response.Headers,
+			Headers:     respHeaders,
 			Body:        TransformBody(entry.Response.Body, respContentType, opts),
 		}
 	}
