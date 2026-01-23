@@ -77,4 +77,10 @@ func Register(srv *sdkmcp.Server, d *Deps) {
 		Name:        "powhttp_validate_schema",
 		Description: "Validate HTTP entry bodies against a schema (Go struct, Zod, or JSON Schema)",
 	}, ToolValidateSchema(d))
+
+	// Tool 13: powhttp_query_body
+	sdkmcp.AddTool(srv, &sdkmcp.Tool{
+		Name:        "powhttp_query_body",
+		Description: "Extract specific fields from request/response bodies using JQ expressions",
+	}, ToolQueryBody(d))
 }

@@ -126,7 +126,7 @@ func (d *DescribeEngine) fetchEntries(ctx context.Context, sessionID string, ent
 // analyzeHeaders computes header frequencies across entries.
 func analyzeHeaders(entries []*client.SessionEntry) []types.HeaderFrequency {
 	if len(entries) == 0 {
-		return nil
+		return []types.HeaderFrequency{}
 	}
 
 	headerCounts := make(map[string]int)

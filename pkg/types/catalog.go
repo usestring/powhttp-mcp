@@ -92,9 +92,11 @@ type QueryKeyAnalysis struct {
 }
 
 // RequestBodySchema describes the JSON Schema of request bodies.
-// Schema is stored as any to avoid schema inference issues with json.RawMessage.
 type RequestBodySchema struct {
-	Schema      any    `json:"schema"`                 // JSON Schema (Draft 2020-12) as a JSON object
+	// JSON Schema is dynamic, could probably type but will cause import cycle
+	// We dont access any fields etc so will not worry for now
+	// TODO: enforce strict typing
+	Schema      any    `json:"schema"`                 
 	SampleCount int    `json:"sample_count"`           // Number of samples used
 	AllMatch    bool   `json:"all_match"`              // True if all samples had identical schema
 	ContentType string `json:"content_type,omitempty"` // Content-Type of the bodies

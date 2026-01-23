@@ -12,9 +12,12 @@ import (
 
 // GetEntryInput is the input for powhttp_get_entry.
 type GetEntryInput struct {
-	SessionID string `json:"session_id,omitempty" jsonschema:"Session ID (default: active)"`
-	EntryID   string `json:"entry_id" jsonschema:"required,Entry ID to retrieve"`
-	MaxBytes  int    `json:"max_bytes,omitempty" jsonschema:"Max body bytes to return"`
+	SessionID      string `json:"session_id,omitempty" jsonschema:"Session ID (default: active)"`
+	EntryID        string `json:"entry_id" jsonschema:"required,Entry ID to retrieve"`
+	MaxBytes       int    `json:"max_bytes,omitempty" jsonschema:"Max body bytes to return"`
+	BodyMode       string `json:"body_mode,omitempty" jsonschema:"Body display mode: schema (default - JSON schema), preview (actual data truncated), full (complete body)"`
+	PreviewBytes   int    `json:"preview_bytes,omitempty" jsonschema:"Max bytes for preview mode (default: 2000)"`
+	IncludeHeaders bool   `json:"include_headers,omitempty" jsonschema:"Include request/response headers (default: false)"`
 }
 
 // GetEntryOutput is the output for powhttp_get_entry.
@@ -87,6 +90,20 @@ func ToolGetEntry(d *Deps) func(ctx context.Context, req *sdkmcp.CallToolRequest
 			sessionID = "active"
 		}
 
+		// Validate body mode
+		bodyMode := input.BodyMode
+		if bodyMode == "" {
+			bodyMode = "schema"
+		}
+		if bodyMode != "schema" && bodyMode != "preview" && bodyMode != "full" {
+			return nil, GetEntryOutput{}, ErrInvalidInput("body_mode must be 'schema', 'preview', or 'full'")
+		}
+
+		previewBytes := input.PreviewBytes
+		if previewBytes <= 0 {
+			previewBytes = 2000
+		}
+
 		// Try cache first
 		var entry *client.SessionEntry
 		if cached, ok := d.Cache.Get(input.EntryID); ok {
@@ -109,11 +126,38 @@ func ToolGetEntry(d *Deps) func(ctx context.Context, req *sdkmcp.CallToolRequest
 			summary = BuildEntrySummaryFromEntry(entry)
 		}
 
-		// Transform entry for display with schema (resource has full body)
-		displayEntry := ToDisplayEntry(entry, BodyTransformOptions{SchemaOnly: true})
+		// Build transform options based on body mode
+		opts := BodyTransformOptions{
+			IncludeHeaders: input.IncludeHeaders,
+		}
+		switch bodyMode {
+		case "schema":
+			opts.SchemaOnly = true
+		case "preview":
+			opts.MaxBytes = previewBytes
+		case "full":
+			if input.MaxBytes > 0 {
+				opts.MaxBytes = input.MaxBytes
+			}
+			// No limit for full mode unless explicitly set
+		}
+
+		// Transform entry for display
+		displayEntry := ToDisplayEntry(entry, opts)
 
 		// Build resource URI - resource always has full body
 		resourceURI := "powhttp://entry/" + sessionID + "/" + input.EntryID
+
+		// Customize hint based on body mode
+		var hint string
+		switch bodyMode {
+		case "schema":
+			hint = "Fetch this resource for full request/response bodies"
+		case "preview":
+			hint = "Body preview shown above. Fetch resource for complete data."
+		case "full":
+			hint = "Full body shown above. Resource available for programmatic access."
+		}
 
 		output := GetEntryOutput{
 			Summary: summary,
@@ -121,7 +165,7 @@ func ToolGetEntry(d *Deps) func(ctx context.Context, req *sdkmcp.CallToolRequest
 			Resource: &types.ResourceRef{
 				URI:  resourceURI,
 				MIME: MimeJSON,
-				Hint: "Fetch this resource for full request/response bodies",
+				Hint: hint,
 			},
 		}
 

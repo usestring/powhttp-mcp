@@ -38,8 +38,9 @@ type EntryMeta struct {
 	H2StreamID     int
 
 	// Size tracking
-	ReqBodyBytes  int
-	RespBodyBytes int
+	ReqBodyBytes    int
+	RespBodyBytes   int
+	RespContentType string
 
 	// Auth fields for flow tracing
 	AuthHeader string            // Full Authorization header value (Bearer, Basic, etc.)
@@ -71,8 +72,9 @@ func (m *EntryMeta) ToSummary() *types.EntrySummary {
 			StreamID:     m.H2StreamID,
 		},
 		Sizes: types.SizeSummary{
-			ReqBodyBytes:  m.ReqBodyBytes,
-			RespBodyBytes: m.RespBodyBytes,
+			ReqBodyBytes:    m.ReqBodyBytes,
+			RespBodyBytes:   m.RespBodyBytes,
+			RespContentType: m.RespContentType,
 		},
 	}
 }
