@@ -123,9 +123,22 @@ https://github.com/user-attachments/assets/52b30cbf-7c66-40b1-a3fe-9c12d37ece11
 
 ---
 
+## MCP Prompts
+
+powhttp-mcp provides 4 prompts for guided workflows:
+
+| Prompt | Description |
+|--------|-------------|
+| `base_prompt` | START HERE: Essential guide for efficient tool usage and token optimization |
+| `compare_browser_program` | Compare browser vs program traffic to find anti-bot detection differences |
+| `build_api_map` | Build an API endpoint catalog from captured traffic |
+| `generate_scraper` | Generate PoC Go scrapers from captured traffic |
+
+---
+
 ## MCP Tools
 
-powhttp-mcp provides 12 tools for HTTP traffic analysis:
+powhttp-mcp provides 13 tools for HTTP traffic analysis:
 
 | Tool | Description |
 |------|-------------|
@@ -141,6 +154,7 @@ powhttp-mcp provides 12 tools for HTTP traffic analysis:
 | `powhttp_describe_endpoint` | Generate detailed endpoint description |
 | `powhttp_trace_flow` | Trace related requests around a seed entry |
 | `powhttp_validate_schema` | Validate entry bodies against a schema |
+| `powhttp_query_body` | Extract specific fields from bodies using JQ expressions |
 
 See [internal/mcp/README.md](internal/mcp/README.md) for detailed tool documentation.
 

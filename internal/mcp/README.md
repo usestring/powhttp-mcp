@@ -6,9 +6,9 @@ The `mcp` package implements a [Model Context Protocol (MCP)](https://modelconte
 
 This package wraps the official [Go MCP SDK](https://github.com/modelcontextprotocol/go-sdk) and exposes powhttp functionality through:
 
-- **12 Tools** - Structured functions for HTTP traffic analysis
+- **13 Tools** - Structured functions for HTTP traffic analysis
 - **6 Resource Templates** - Access to raw data (entries, TLS, HTTP/2, diffs, etc.)
-- **3 Prompts** - Guided workflows for common tasks
+- **4 Prompts** - Guided workflows for common tasks
 
 ## Architecture
 
@@ -63,8 +63,27 @@ err = server.Run(ctx) // stdio transport
 | `powhttp_describe_endpoint` | Generate detailed endpoint description |
 | `powhttp_trace_flow` | Trace related requests around a seed entry |
 | `powhttp_validate_schema` | Validate entry bodies against a schema |
+| `powhttp_query_body` | Extract specific fields from bodies using JQ expressions |
 
 See tool source files in `tools/` for detailed input/output schemas.
+
+### Token Optimization
+
+Tools are optimized to minimize context usage by default:
+
+**`powhttp_search_entries`**
+- Returns thin results by default (entry_id, URL, method, status, http_version, content-type hint)
+- Set `include_details: true` only when filtering by TLS/HTTP2/process info
+- `sizes.resp_content_type` helps identify JSON responses without fetching bodies
+
+**`powhttp_get_entry`**
+- `include_headers: false` (default) - omits headers to save tokens
+- `body_mode`: `schema` (default - JSON schema only), `preview` (first 2KB), `full` (complete body)
+
+**`powhttp_query_body`**
+- Extract specific fields directly using JQ expressions
+- No need to fetch full bodies for data extraction
+- Supports `deduplicate: true` to remove duplicate values
 
 ## Resources
 
@@ -87,6 +106,7 @@ Resources provide access to raw data. Use sparingly as they have high context co
 
 | Prompt | Description |
 |--------|-------------|
+| `base_prompt` | START HERE: Essential guide for efficient tool usage and token optimization |
 | `compare_browser_program` | Compare browser vs program requests to find anti-bot detection differences |
 | `build_api_map` | Build an API endpoint catalog from captured traffic |
 | `generate_scraper` | Generate POC Go scraper from captured traffic |
