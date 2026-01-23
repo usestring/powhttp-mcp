@@ -56,6 +56,21 @@ go install github.com/usestring/powhttp-mcp/cmd/powhttp-mcp@v1.0.0
 
 ---
 
+## Enabling the Data API
+
+Before using powhttp-mcp, you need to enable the Data API in powhttp:
+
+1. Open **Powhttp Settings** > **Data API**
+2. Make sure the Data API is **running**
+3. (Recommended) Enable **Auto start on app launch** for convenience
+4. Note the **port number** — you'll need this for `POWHTTP_BASE_URL` in your MCP configuration
+
+<p align="center">
+  <img src="assets/data-api-settings.png" alt="Powhttp Data API Settings" width="600">
+</p>
+
+---
+
 ## Usage
 
 ### Connecting to Cursor
