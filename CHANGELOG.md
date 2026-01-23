@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.0](https://github.com/usestring/powhttp-mcp/compare/v1.0.0...v1.1.0) (2026-01-23)
+
+
+### Features
+
+* add query_body tool & base prompt with token optimisations  ([#9](https://github.com/usestring/powhttp-mcp/issues/9)) ([87fb0b9](https://github.com/usestring/powhttp-mcp/commit/87fb0b9c68df89ef56dc9145ebb93d525b492f3b))
+
 ## 1.0.0 (2026-01-14)
 
 
