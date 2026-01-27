@@ -265,6 +265,21 @@ See [internal/mcp/README.md](internal/mcp/README.md) for detailed tool documenta
 </details>
 
 <details>
+<summary><strong>AI Token Optimization</strong></summary>
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `COMPACT_MAX_ARRAY_ITEMS` | In compact mode, trim arrays to this many items | `3` |
+| `COMPACT_MAX_STRING_LEN` | Truncate strings longer than this (chars) | `500` |
+| `COMPACT_MAX_DEPTH` | Max nesting depth for compaction (0 = unlimited) | `0` |
+| `DEFAULT_SEARCH_LIMIT` | Default max results for search_entries | `10` |
+| `DEFAULT_QUERY_LIMIT` | Default max entries for query_body | `20` |
+| `DEFAULT_CLUSTER_LIMIT` | Default max clusters for extract_endpoints | `15` |
+| `DEFAULT_EXAMPLES_PER_ITEM` | Default examples shown per cluster | `3` |
+
+</details>
+
+<details>
 <summary><strong>Log Rotation</strong></summary>
 
 | Variable | Description | Default |

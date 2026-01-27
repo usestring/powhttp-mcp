@@ -7,6 +7,7 @@ import (
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/usestring/powhttp-mcp/pkg/client"
+	"github.com/usestring/powhttp-mcp/pkg/jsoncompact"
 	"github.com/usestring/powhttp-mcp/pkg/types"
 )
 
@@ -14,9 +15,8 @@ import (
 type GetEntryInput struct {
 	SessionID      string `json:"session_id,omitempty" jsonschema:"Session ID (default: active)"`
 	EntryID        string `json:"entry_id" jsonschema:"required,Entry ID to retrieve"`
-	MaxBytes       int    `json:"max_bytes,omitempty" jsonschema:"Max body bytes to return"`
-	BodyMode       string `json:"body_mode,omitempty" jsonschema:"Body display mode: schema (default - JSON schema), preview (actual data truncated), full (complete body)"`
-	PreviewBytes   int    `json:"preview_bytes,omitempty" jsonschema:"Max bytes for preview mode (default: 2000)"`
+	MaxBytes       int    `json:"max_bytes,omitempty" jsonschema:"Max body bytes to return (for full mode)"`
+	BodyMode       string `json:"body_mode,omitempty" jsonschema:"Body display mode: compact (default - arrays trimmed), schema (JSON schema only), full (complete body)"`
 	IncludeHeaders bool   `json:"include_headers,omitempty" jsonschema:"Include request/response headers (default: false)"`
 }
 
@@ -27,6 +27,7 @@ type GetEntryOutput struct {
 	Resource   *types.ResourceRef  `json:"resource,omitempty"`
 	Truncated  bool                `json:"truncated,omitempty"`
 	Truncation *Truncation         `json:"truncation,omitempty"`
+	Hint       string              `json:"hint,omitempty"`
 }
 
 // Truncation describes what was truncated.
@@ -93,15 +94,10 @@ func ToolGetEntry(d *Deps) func(ctx context.Context, req *sdkmcp.CallToolRequest
 		// Validate body mode
 		bodyMode := input.BodyMode
 		if bodyMode == "" {
-			bodyMode = "schema"
+			bodyMode = "compact"
 		}
-		if bodyMode != "schema" && bodyMode != "preview" && bodyMode != "full" {
-			return nil, GetEntryOutput{}, ErrInvalidInput("body_mode must be 'schema', 'preview', or 'full'")
-		}
-
-		previewBytes := input.PreviewBytes
-		if previewBytes <= 0 {
-			previewBytes = 2000
+		if bodyMode != "compact" && bodyMode != "schema" && bodyMode != "full" {
+			return nil, GetEntryOutput{}, ErrInvalidInput("body_mode must be 'compact', 'schema', or 'full'")
 		}
 
 		// Try cache first
@@ -131,10 +127,15 @@ func ToolGetEntry(d *Deps) func(ctx context.Context, req *sdkmcp.CallToolRequest
 			IncludeHeaders: input.IncludeHeaders,
 		}
 		switch bodyMode {
+		case "compact":
+			opts.CompactArrays = true
+			opts.CompactOptions = &jsoncompact.Options{
+				MaxArrayItems: d.Config.CompactMaxArrayItems,
+				MaxStringLen:  d.Config.CompactMaxStringLen,
+				MaxDepth:      d.Config.CompactMaxDepth,
+			}
 		case "schema":
 			opts.SchemaOnly = true
-		case "preview":
-			opts.MaxBytes = previewBytes
 		case "full":
 			if input.MaxBytes > 0 {
 				opts.MaxBytes = input.MaxBytes
@@ -148,15 +149,30 @@ func ToolGetEntry(d *Deps) func(ctx context.Context, req *sdkmcp.CallToolRequest
 		// Build resource URI - resource always has full body
 		resourceURI := "powhttp://entry/" + sessionID + "/" + input.EntryID
 
-		// Customize hint based on body mode
+		// Check if response is JSON for contextual hints
+		var respContentType string
+		if entry.Response != nil {
+			respContentType = entry.Response.Headers.Get("content-type")
+		}
+		isJSONResp := isJSONContentType(respContentType)
+
+		// Customize hint based on body mode and content type
 		var hint string
 		switch bodyMode {
+		case "compact":
+			if isJSONResp {
+				hint = "Arrays trimmed. Use query_body to extract specific fields, or body_mode='full' for complete data."
+			} else {
+				hint = "Use trace_flow to find related requests."
+			}
 		case "schema":
-			hint = "Fetch this resource for full request/response bodies"
-		case "preview":
-			hint = "Body preview shown above. Fetch resource for complete data."
+			hint = "Schema-only view. Use body_mode='full' for actual values or query_body for specific fields."
 		case "full":
-			hint = "Full body shown above. Resource available for programmatic access."
+			if isJSONResp {
+				hint = "Use query_body with expression to extract specific values."
+			} else {
+				hint = "Entry complete. Use trace_flow to find related requests."
+			}
 		}
 
 		output := GetEntryOutput{
@@ -165,8 +181,9 @@ func ToolGetEntry(d *Deps) func(ctx context.Context, req *sdkmcp.CallToolRequest
 			Resource: &types.ResourceRef{
 				URI:  resourceURI,
 				MIME: MimeJSON,
-				Hint: hint,
+				Hint: "Fetch for complete request/response with full bodies.",
 			},
+			Hint: hint,
 		}
 
 		return nil, output, nil

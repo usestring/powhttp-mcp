@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"fmt"
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -28,6 +29,7 @@ type TraceFlowOptions struct {
 type TraceFlowOutput struct {
 	Graph    *types.FlowGraph   `json:"graph"`
 	Resource *types.ResourceRef `json:"resource,omitempty"`
+	Hint     string             `json:"hint,omitempty"`
 }
 
 // ToolTraceFlow traces request flow.
@@ -62,6 +64,16 @@ func ToolTraceFlow(d *Deps) func(ctx context.Context, req *sdkmcp.CallToolReques
 			return nil, TraceFlowOutput{}, WrapPowHTTPError(err)
 		}
 
+		// Build helpful hint based on graph structure
+		var hint string
+		if graph == nil || len(graph.Nodes) == 0 {
+			hint = "No related requests. Try: same_host_only=false, same_pid_only=false, or increase time_window_ms."
+		} else if len(graph.Edges) == 0 {
+			hint = "Single isolated request. Try same_pid_only=false or same_host_only=false to find related traffic."
+		} else {
+			hint = fmt.Sprintf("Found %d related requests. Use get_entry to inspect individual nodes.", len(graph.Nodes))
+		}
+
 		return nil, TraceFlowOutput{
 			Graph: graph,
 			Resource: &types.ResourceRef{
@@ -69,6 +81,7 @@ func ToolTraceFlow(d *Deps) func(ctx context.Context, req *sdkmcp.CallToolReques
 				MIME: MimeJSON,
 				Hint: "Fetch for raw flow graph data export",
 			},
+			Hint: hint,
 		}, nil
 	}
 }

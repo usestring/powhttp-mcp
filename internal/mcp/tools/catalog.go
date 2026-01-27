@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"fmt"
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -41,6 +42,7 @@ type ExtractEndpointsOutput struct {
 	TotalCount int                `json:"total_count"`
 	ScopeHash  string             `json:"scope_hash"`
 	Resource   *types.ResourceRef `json:"resource,omitempty"`
+	Hint       string             `json:"hint,omitempty"`
 }
 
 // DescribeEndpointInput is the input for powhttp_describe_endpoint.
@@ -54,6 +56,7 @@ type DescribeEndpointInput struct {
 type DescribeEndpointOutput struct {
 	Description *types.EndpointDescription `json:"description"`
 	Resource    *types.ResourceRef         `json:"resource,omitempty"`
+	Hint        string                     `json:"hint,omitempty"`
 }
 
 // ToolExtractEndpoints extracts endpoint clusters.
@@ -64,9 +67,14 @@ func ToolExtractEndpoints(d *Deps) func(ctx context.Context, req *sdkmcp.CallToo
 			sessionID = "active"
 		}
 
+		limit := input.Limit
+		if limit <= 0 {
+			limit = d.Config.DefaultClusterLimit
+		}
+
 		extractReq := &types.ExtractRequest{
 			SessionID: sessionID,
-			Limit:     input.Limit,
+			Limit:     limit,
 			Offset:    input.Offset,
 		}
 
@@ -95,6 +103,17 @@ func ToolExtractEndpoints(d *Deps) func(ctx context.Context, req *sdkmcp.CallToo
 			return nil, ExtractEndpointsOutput{}, WrapPowHTTPError(err)
 		}
 
+		// Build helpful hint with concrete values
+		var hint string
+		if len(resp.Clusters) == 0 {
+			hint = "No endpoints found. Session may be empty or scope filters too restrictive."
+		} else if resp.TotalCount > len(resp.Clusters) {
+			nextOffset := input.Offset + len(resp.Clusters)
+			hint = fmt.Sprintf("Showing %d of %d clusters. Use scope.host to filter, or offset=%d for next page.", len(resp.Clusters), resp.TotalCount, nextOffset)
+		} else {
+			hint = fmt.Sprintf("Found %d clusters. Use describe_endpoint(cluster_id=...) for schema and examples.", len(resp.Clusters))
+		}
+
 		return nil, ExtractEndpointsOutput{
 			Clusters:   resp.Clusters,
 			TotalCount: resp.TotalCount,
@@ -104,6 +123,7 @@ func ToolExtractEndpoints(d *Deps) func(ctx context.Context, req *sdkmcp.CallToo
 				MIME: MimeJSON,
 				Hint: "Fetch for complete endpoint catalog dump",
 			},
+			Hint: hint,
 		}, nil
 	}
 }
@@ -131,8 +151,12 @@ func ToolDescribeEndpoint(d *Deps) func(ctx context.Context, req *sdkmcp.CallToo
 			return nil, DescribeEndpointOutput{}, WrapPowHTTPError(err)
 		}
 
+		// Build contextual hint
+		hint := fmt.Sprintf("Use query_body(cluster_id=%q, expression='.') to explore response structure.", input.ClusterID)
+
 		return nil, DescribeEndpointOutput{
 			Description: desc,
+			Hint:        hint,
 		}, nil
 	}
 }
