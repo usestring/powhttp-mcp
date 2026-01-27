@@ -54,6 +54,69 @@ Or install a specific version:
 go install github.com/usestring/powhttp-mcp/cmd/powhttp-mcp@v1.0.0
 ```
 
+<details>
+<summary><strong>Don't have Go installed?</strong></summary>
+
+Download and install Go from the official website: [https://go.dev/doc/install](https://go.dev/doc/install)
+
+</details>
+
+<details>
+<summary><strong>Adding Go binaries to your PATH</strong></summary>
+
+If you get `command not found: powhttp-mcp` after installation, you need to add Go's bin directory to your PATH.
+
+**Find your Go bin directory:**
+
+```bash
+go env GOPATH
+```
+
+This returns your Go workspace directory, typically `~/go` (macOS/Linux) or `C:\Users\yourname\go` (Windows). The binaries are installed in the `bin` subdirectory.
+
+### macOS / Linux
+
+For **bash** (`~/.bashrc` or `~/.bash_profile`):
+```bash
+export PATH="$PATH:$(go env GOPATH)/bin"
+```
+
+For **zsh** (`~/.zshrc`):
+```bash
+export PATH="$PATH:$(go env GOPATH)/bin"
+```
+
+For **fish** (`~/.config/fish/config.fish`):
+```fish
+fish_add_path (go env GOPATH)/bin
+```
+
+Then reload your shell:
+```bash
+source ~/.zshrc  # or ~/.bashrc, etc.
+```
+
+### Windows
+
+**PowerShell (current session):**
+```powershell
+$env:PATH += ";$(go env GOPATH)\bin"
+```
+
+**Permanently via PowerShell:**
+```powershell
+[Environment]::SetEnvironmentVariable("PATH", $env:PATH + ";$(go env GOPATH)\bin", "User")
+```
+
+**Or via System Settings:**
+1. Press `Win + R`, type `sysdm.cpl`, press Enter
+2. Go to **Advanced** → **Environment Variables**
+3. Under "User variables", select **Path** and click **Edit**
+4. Click **New** and add `%USERPROFILE%\go\bin`
+5. Click **OK** to save, then restart your terminal
+
+</details>
+
 ---
 
 ## Enabling the Data API
