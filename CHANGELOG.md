@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.0](https://github.com/usestring/powhttp-mcp/compare/v1.1.0...v1.2.0) (2026-01-27)
+
+
+### Features
+
+* add json compaction for token optimization ([#14](https://github.com/usestring/powhttp-mcp/issues/14)) ([1048a40](https://github.com/usestring/powhttp-mcp/commit/1048a404a2c8523985e58d93c826466031d7d5dc))
+
 ## [1.1.0](https://github.com/usestring/powhttp-mcp/compare/v1.0.0...v1.1.0) (2026-01-23)
 
 
