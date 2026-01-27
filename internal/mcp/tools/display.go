@@ -8,6 +8,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/usestring/powhttp-mcp/pkg/client"
+	"github.com/usestring/powhttp-mcp/pkg/jsoncompact"
 	"github.com/usestring/powhttp-mcp/pkg/jsonschema"
 )
 
@@ -50,7 +51,9 @@ type DisplayResponse struct {
 type BodyTransformOptions struct {
 	MaxBytes       int
 	SchemaOnly     bool
-	IncludeHeaders bool // If false, headers are omitted from output
+	CompactArrays  bool                  // If true, compact JSON arrays using jsoncompact
+	CompactOptions *jsoncompact.Options  // Options for compaction (nil uses defaults)
+	IncludeHeaders bool                  // If false, headers are omitted from output
 }
 
 // TransformBody decodes a base64 body for display.
@@ -82,6 +85,15 @@ func TransformBody(encoded *string, contentType string, opts BodyTransformOption
 			}
 		}
 		// Fall through to text display if schema inference fails
+	}
+
+	// If compact mode and JSON content type, compact arrays
+	if opts.CompactArrays && isJSONContentType(contentType) {
+		compacted, err := jsoncompact.Compact(decoded, opts.CompactOptions)
+		if err == nil {
+			return string(compacted)
+		}
+		// Fall through to text display if compaction fails
 	}
 
 	// Return as text, potentially truncated

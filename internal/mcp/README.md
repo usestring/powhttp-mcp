@@ -78,7 +78,7 @@ Tools are optimized to minimize context usage by default:
 
 **`powhttp_get_entry`**
 - `include_headers: false` (default) - omits headers to save tokens
-- `body_mode`: `schema` (default - JSON schema only), `preview` (first 2KB), `full` (complete body)
+- `body_mode`: `compact` (default - arrays trimmed to 3 items), `schema` (JSON schema only), `full` (complete body)
 
 **`powhttp_query_body`**
 - Extract specific fields directly using JQ expressions
