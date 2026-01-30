@@ -190,6 +190,19 @@ func ToolQueryBody(d *Deps) func(ctx context.Context, req *sdkmcp.CallToolReques
 		if output.Summary.Truncated {
 			output.Hints = append(output.Hints, "Results were truncated. Use filters or increase max_results.")
 		}
+		// Non-JSON hint: when all entries were skipped due to non-JSON content type
+		if len(allBodies) == 0 && output.Summary.EntriesSkipped > 0 && output.Summary.EntriesProcessed > 0 {
+			allNonJSON := true
+			for _, e := range output.Entries {
+				if e.Skipped && e.SkipReason != "" && !strings.Contains(e.SkipReason, "not JSON content-type") {
+					allNonJSON = false
+					break
+				}
+			}
+			if allNonJSON {
+				output.Hints = append(output.Hints, "All entries have non-JSON content types. Use get_entry with body_mode: \"preview\" to inspect the raw body format.")
+			}
+		}
 
 		return nil, output, nil
 	}
@@ -228,4 +241,3 @@ func extractBody(entry *client.SessionEntry, target string) ([]byte, bool, strin
 
 	return bodyBytes, false, ""
 }
-

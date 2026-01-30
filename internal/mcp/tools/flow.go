@@ -26,8 +26,9 @@ type TraceFlowOptions struct {
 
 // TraceFlowOutput is the output for powhttp_trace_flow.
 type TraceFlowOutput struct {
-	Graph    *types.FlowGraph   `json:"graph"`
-	Resource *types.ResourceRef `json:"resource,omitempty"`
+	Graph           *types.FlowGraph   `json:"graph"`
+	EdgeTypeSummary map[string]int     `json:"edge_type_summary,omitempty"`
+	Resource        *types.ResourceRef `json:"resource,omitempty"`
 }
 
 // ToolTraceFlow traces request flow.
@@ -62,8 +63,18 @@ func ToolTraceFlow(d *Deps) func(ctx context.Context, req *sdkmcp.CallToolReques
 			return nil, TraceFlowOutput{}, WrapPowHTTPError(err)
 		}
 
+		// Compute edge type summary
+		var edgeSummary map[string]int
+		if graph != nil && len(graph.Edges) > 0 {
+			edgeSummary = make(map[string]int)
+			for _, edge := range graph.Edges {
+				edgeSummary[edge.Reason]++
+			}
+		}
+
 		return nil, TraceFlowOutput{
-			Graph: graph,
+			Graph:           graph,
+			EdgeTypeSummary: edgeSummary,
 			Resource: &types.ResourceRef{
 				URI:  "powhttp://flow/" + input.SeedEntryID,
 				MIME: MimeJSON,

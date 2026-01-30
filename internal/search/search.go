@@ -3,24 +3,29 @@ package search
 
 import (
 	"context"
+	"encoding/base64"
+	"fmt"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/RoaringBitmap/roaring/v2"
 
+	"github.com/usestring/powhttp-mcp/internal/cache"
 	"github.com/usestring/powhttp-mcp/internal/indexer"
+	"github.com/usestring/powhttp-mcp/pkg/client"
 	"github.com/usestring/powhttp-mcp/pkg/types"
 )
 
 // SearchEngine provides search capabilities over the indexer.
 type SearchEngine struct {
 	indexer *indexer.Indexer
+	cache   *cache.EntryCache
 }
 
 // New creates a new SearchEngine.
-func New(idx *indexer.Indexer) *SearchEngine {
-	return &SearchEngine{indexer: idx}
+func New(idx *indexer.Indexer, c *cache.EntryCache) *SearchEngine {
+	return &SearchEngine{indexer: idx, cache: c}
 }
 
 // Search executes a search with auto-refresh if stale.
@@ -42,8 +47,9 @@ func (s *SearchEngine) Search(ctx context.Context, req *types.SearchRequest) (*t
 	// Plan filters to get candidate bitmap
 	candidates := s.planFilters(req.Filters, req.Query)
 
-	// Apply time filters (requires scanning metadata)
-	candidates = s.applyTimeFilters(candidates, req.Filters)
+	// Apply time filters and post-filters (requires scanning metadata)
+	postFilterResult := s.applyPostFilters(candidates, req.Filters)
+	candidates = postFilterResult.bitmap
 
 	// Get total count hint before pagination
 	totalHint := int(candidates.GetCardinality())
@@ -68,10 +74,29 @@ func (s *SearchEngine) Search(ctx context.Context, req *types.SearchRequest) (*t
 	}
 	paginated := results[start:end]
 
+	// Build search scope
+	var scope *types.SearchScope
+	needsScope := req.Query != "" || (req.Filters != nil && (req.Filters.BodyContains != "" || req.Filters.HeaderContains != ""))
+	if needsScope {
+		scope = &types.SearchScope{
+			BodyIndexEnabled: s.indexer.BodyIndexEnabled(),
+		}
+		if req.Filters != nil && req.Filters.BodyContains != "" {
+			total := postFilterResult.bodyCacheHits + postFilterResult.bodyCacheMisses
+			if total > 0 {
+				scope.BodySearchCoverage = fmt.Sprintf("partial (%d/%d entries cached)", postFilterResult.bodyCacheHits, total)
+				if postFilterResult.bodyCacheMisses == 0 {
+					scope.BodySearchCoverage = fmt.Sprintf("full (%d entries searched)", total)
+				}
+			}
+		}
+	}
+
 	return &types.SearchResponse{
 		Results:    paginated,
 		TotalHint:  totalHint,
 		SyncedAtMs: s.indexer.LastSyncTime(req.SessionID).UnixMilli(),
+		Scope:      scope,
 	}, nil
 }
 
@@ -167,25 +192,44 @@ func (s *SearchEngine) planFilters(filters *types.SearchFilters, query string) *
 		}
 	}
 
-	// Apply free text query as token filter
+	// Apply free text query: OR across URL, header, body token indexes per token, AND across tokens
 	if query != "" {
 		queryTokens := indexer.Tokenize(query)
 		for _, token := range queryTokens {
+			union := roaring.New()
+
 			if bm := s.indexer.GetBitmapForToken(token); bm != nil {
-				result = roaring.And(result, bm)
+				union.Or(bm)
 			}
+			if bm := s.indexer.GetBitmapForHeaderToken(token); bm != nil {
+				union.Or(bm)
+			}
+			if s.indexer.BodyIndexEnabled() {
+				if bm := s.indexer.GetBitmapForBodyToken(token); bm != nil {
+					union.Or(bm)
+				}
+			}
+
+			result = roaring.And(result, union)
 		}
 	}
 
-	// PathContains and URLContains require post-filtering (done in applyTimeFilters)
+	// PathContains, URLContains, HeaderContains, BodyContains require post-filtering
 
 	return result
 }
 
-// applyTimeFilters applies time-based and text-contains filters that require metadata access.
-func (s *SearchEngine) applyTimeFilters(candidates *roaring.Bitmap, filters *types.SearchFilters) *roaring.Bitmap {
+// postFilterResult holds the filtered bitmap and cache statistics.
+type postFilterResult struct {
+	bitmap          *roaring.Bitmap
+	bodyCacheHits   int
+	bodyCacheMisses int
+}
+
+// applyPostFilters applies time-based and text-contains filters that require metadata access.
+func (s *SearchEngine) applyPostFilters(candidates *roaring.Bitmap, filters *types.SearchFilters) postFilterResult {
 	if filters == nil {
-		return candidates
+		return postFilterResult{bitmap: candidates}
 	}
 
 	// Determine time bounds
@@ -199,13 +243,19 @@ func (s *SearchEngine) applyTimeFilters(candidates *roaring.Bitmap, filters *typ
 		untilMs = filters.UntilMs
 	}
 
-	needsFiltering := sinceMs > 0 || untilMs > 0 || filters.PathContains != "" || filters.URLContains != ""
+	needsFiltering := sinceMs > 0 || untilMs > 0 ||
+		filters.PathContains != "" || filters.URLContains != "" ||
+		filters.HeaderContains != "" || filters.BodyContains != ""
 	if !needsFiltering {
-		return candidates
+		return postFilterResult{bitmap: candidates}
 	}
+
+	headerContainsLower := strings.ToLower(filters.HeaderContains)
+	bodyContainsLower := strings.ToLower(filters.BodyContains)
 
 	result := roaring.New()
 	iter := candidates.Iterator()
+	var bodyCacheHits, bodyCacheMisses int
 
 	for iter.HasNext() {
 		docID := iter.Next()
@@ -236,10 +286,69 @@ func (s *SearchEngine) applyTimeFilters(candidates *roaring.Bitmap, filters *typ
 			}
 		}
 
+		// HeaderContains filter: case-insensitive substring on "name: value"
+		if filters.HeaderContains != "" {
+			found := false
+			for _, hv := range meta.HeaderValues {
+				field := strings.ToLower(hv.Name + ": " + hv.Value)
+				if strings.Contains(field, headerContainsLower) {
+					found = true
+					break
+				}
+			}
+			if !found {
+				continue
+			}
+		}
+
+		// BodyContains filter: fetch from cache, decode base64, substring match
+		if filters.BodyContains != "" {
+			if s.cache == nil {
+				bodyCacheMisses++
+				continue
+			}
+			entry, ok := s.cache.Get(meta.EntryID)
+			if !ok {
+				bodyCacheMisses++
+				continue
+			}
+			bodyCacheHits++
+			if !bodyContainsMatch(entry, bodyContainsLower) {
+				continue
+			}
+		}
+
 		result.Add(docID)
 	}
 
-	return result
+	return postFilterResult{
+		bitmap:          result,
+		bodyCacheHits:   bodyCacheHits,
+		bodyCacheMisses: bodyCacheMisses,
+	}
+}
+
+// bodyContainsMatch checks if the decoded body text of request or response contains the substring.
+func bodyContainsMatch(entry *client.SessionEntry, needle string) bool {
+	// Check request body
+	if entry.Request.Body != nil && *entry.Request.Body != "" {
+		if decoded, err := base64.StdEncoding.DecodeString(*entry.Request.Body); err == nil {
+			if strings.Contains(strings.ToLower(string(decoded)), needle) {
+				return true
+			}
+		}
+	}
+
+	// Check response body
+	if entry.Response != nil && entry.Response.Body != nil && *entry.Response.Body != "" {
+		if decoded, err := base64.StdEncoding.DecodeString(*entry.Response.Body); err == nil {
+			if strings.Contains(strings.ToLower(string(decoded)), needle) {
+				return true
+			}
+		}
+	}
+
+	return false
 }
 
 // scoreResults applies ranking heuristics to produce scored results.
@@ -271,6 +380,8 @@ func (s *SearchEngine) scoreResults(docIDs []uint32, req *types.SearchRequest) [
 		timeRange = 1 // Avoid division by zero
 	}
 
+	bodyIndexEnabled := s.indexer.BodyIndexEnabled()
+
 	for _, docID := range docIDs {
 		meta := s.indexer.GetMeta(docID)
 		if meta == nil {
@@ -279,23 +390,60 @@ func (s *SearchEngine) scoreResults(docIDs []uint32, req *types.SearchRequest) [
 
 		var score float64
 		var highlights []string
+		var matchedIn []string
 
-		// Token overlap scoring (0-1 range)
+		// Cross-index token scoring
 		if len(queryTokens) > 0 {
-			urlTokens := indexer.TokenizeURL(meta.URL)
-			tokenSet := make(map[string]struct{}, len(urlTokens))
-			for _, t := range urlTokens {
-				tokenSet[t] = struct{}{}
-			}
+			totalTokens := float64(len(queryTokens))
 
-			matches := 0
+			// URL token matches (weight: 0.4)
+			urlTokens := indexer.TokenizeURL(meta.URL)
+			urlTokenSet := make(map[string]struct{}, len(urlTokens))
+			for _, t := range urlTokens {
+				urlTokenSet[t] = struct{}{}
+			}
+			urlMatches := 0
 			for _, qt := range queryTokens {
-				if _, exists := tokenSet[qt]; exists {
-					matches++
+				if _, exists := urlTokenSet[qt]; exists {
+					urlMatches++
 					highlights = append(highlights, qt)
 				}
 			}
-			score += float64(matches) / float64(len(queryTokens)) * 0.4
+			if urlMatches > 0 {
+				score += float64(urlMatches) / totalTokens * 0.4
+				matchedIn = appendUnique(matchedIn, "url")
+			}
+
+			// Header token matches (weight: 0.3)
+			headerTokens := indexer.TokenizeHeaders(meta.HeaderValues)
+			headerTokenSet := make(map[string]struct{}, len(headerTokens))
+			for _, t := range headerTokens {
+				headerTokenSet[t] = struct{}{}
+			}
+			headerMatches := 0
+			for _, qt := range queryTokens {
+				if _, exists := headerTokenSet[qt]; exists {
+					headerMatches++
+				}
+			}
+			if headerMatches > 0 {
+				score += float64(headerMatches) / totalTokens * 0.3
+				matchedIn = appendUnique(matchedIn, "header")
+			}
+
+			// Body token matches (weight: 0.2) - only check bitmap if body indexing enabled
+			if bodyIndexEnabled {
+				bodyMatches := 0
+				for _, qt := range queryTokens {
+					if bm := s.indexer.GetBitmapForBodyToken(qt); bm != nil && bm.Contains(docID) {
+						bodyMatches++
+					}
+				}
+				if bodyMatches > 0 {
+					score += float64(bodyMatches) / totalTokens * 0.2
+					matchedIn = appendUnique(matchedIn, "body")
+				}
+			}
 		}
 
 		// Method match boost
@@ -303,7 +451,7 @@ func (s *SearchEngine) scoreResults(docIDs []uint32, req *types.SearchRequest) [
 			score += 0.1
 		}
 
-		// Recency boost (newer = higher score)
+		// Recency boost (newer = higher score, weight: 0.3)
 		if timeRange > 0 {
 			recencyScore := float64(meta.TsMs-minTs) / float64(timeRange)
 			score += recencyScore * 0.3
@@ -323,12 +471,27 @@ func (s *SearchEngine) scoreResults(docIDs []uint32, req *types.SearchRequest) [
 		// Base score for all results
 		score += 0.1
 
-		results = append(results, types.SearchResult{
+		result := types.SearchResult{
 			Summary:    meta.ToSummary(),
 			Score:      score,
 			Highlights: highlights,
-		})
+		}
+		if len(matchedIn) > 0 {
+			result.MatchedIn = matchedIn
+		}
+
+		results = append(results, result)
 	}
 
 	return results
+}
+
+// appendUnique appends a value to a slice if it's not already present.
+func appendUnique(slice []string, val string) []string {
+	for _, s := range slice {
+		if s == val {
+			return slice
+		}
+	}
+	return append(slice, val)
 }

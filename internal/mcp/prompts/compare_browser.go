@@ -57,18 +57,20 @@ func HandleCompareBrowserProgram(cfg *Config) func(ctx context.Context, req *sdk
 		sb.WriteString("## Suggested Tools\n\n")
 		sb.WriteString("```\n")
 		sb.WriteString("# Step 1: Search for baseline (browser) request\n")
+		sb.WriteString("# Tip: Use header_contains to match User-Agent for more reliable browser detection\n")
 		if baselineHint != "" {
-			sb.WriteString(fmt.Sprintf("powhttp_search_entries(query=\"%s\", filters={process_name: \"Chrome\"})\n", baselineHint))
+			sb.WriteString(fmt.Sprintf("powhttp_search_entries(query=\"%s\", filters={process_name: \"Chrome\", header_contains: \"Mozilla\"})\n", baselineHint))
 		} else {
-			sb.WriteString("powhttp_search_entries(filters={process_name: \"Chrome\"})\n")
+			sb.WriteString("powhttp_search_entries(filters={process_name: \"Chrome\", header_contains: \"Mozilla\"})\n")
 		}
 		sb.WriteString("\n")
 
 		sb.WriteString("# Step 2: Search for candidate (program) request\n")
+		sb.WriteString("# Tip: Use header_contains to match program User-Agent\n")
 		if candidateHint != "" {
-			sb.WriteString(fmt.Sprintf("powhttp_search_entries(query=\"%s\", filters={process_name: \"python\"})\n", candidateHint))
+			sb.WriteString(fmt.Sprintf("powhttp_search_entries(query=\"%s\", filters={process_name: \"python\", header_contains: \"python-requests\"})\n", candidateHint))
 		} else {
-			sb.WriteString("powhttp_search_entries(filters={process_name: \"python\"})\n")
+			sb.WriteString("powhttp_search_entries(filters={process_name: \"python\", header_contains: \"python-requests\"})\n")
 		}
 		sb.WriteString("\n")
 
@@ -95,7 +97,8 @@ func HandleCompareBrowserProgram(cfg *Config) func(ctx context.Context, req *sdk
 		sb.WriteString("- **No matching entries?** Check `powhttp_sessions_list` to verify active session\n")
 		sb.WriteString("- **Empty diff?** Ensure baseline and candidate hit the same endpoint and method\n")
 		sb.WriteString("- **Too many differences?** Use `ignore_headers` option to filter volatile headers (Date, Cookie, etc.)\n")
-		sb.WriteString("- **Can't find browser traffic?** Check process_name filter - try \"Chrome\", \"firefox\", \"Safari\"\n\n")
+		sb.WriteString("- **Can't find browser traffic?** Try `header_contains: \"Mozilla\"` to match browser User-Agent\n")
+		sb.WriteString("- **Can't find program traffic?** Try `header_contains: \"python-requests\"` or similar UA string\n\n")
 
 		// 8. Success Criteria
 		sb.WriteString("## Success Criteria\n\n")

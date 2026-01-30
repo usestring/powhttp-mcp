@@ -20,6 +20,8 @@ type SearchFilters struct {
 	ProcessName     string
 	PID             int
 	HeaderName      string
+	HeaderContains  string
+	BodyContains    string
 	TLSConnectionID string
 	JA3             string
 	JA4             string
@@ -33,6 +35,13 @@ type SearchResult struct {
 	Summary    *EntrySummary `json:"summary"`
 	Score      float64       `json:"score"`
 	Highlights []string      `json:"highlights,omitempty"`
+	MatchedIn  []string      `json:"matched_in,omitempty"`
+}
+
+// SearchScope reports search coverage for transparency.
+type SearchScope struct {
+	BodyIndexEnabled    bool   `json:"body_index_enabled"`
+	BodySearchCoverage  string `json:"body_search_coverage,omitempty"`
 }
 
 // SearchResponse contains the search results.
@@ -40,4 +49,5 @@ type SearchResponse struct {
 	Results    []SearchResult `json:"results"`
 	TotalHint  int            `json:"total_hint,omitempty"`
 	SyncedAtMs int64          `json:"synced_at_ms"`
+	Scope      *SearchScope   `json:"scope,omitempty"`
 }

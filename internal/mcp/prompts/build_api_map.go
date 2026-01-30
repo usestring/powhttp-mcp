@@ -82,6 +82,15 @@ func HandleBuildAPIMap(cfg *Config) func(ctx context.Context, req *sdkmcp.GetPro
 
 		sb.WriteString("# Step 3: Get example requests (when schema details needed)\n")
 		sb.WriteString("powhttp_get_entry(entry_id=\"<entry_id>\")\n")
+		sb.WriteString("\n")
+		sb.WriteString("# Step 4: Discover authentication patterns\n")
+		sb.WriteString("# 4a. Endpoint-level auth signals (fastest - already computed per cluster)\n")
+		sb.WriteString("powhttp_describe_endpoint(cluster_id=\"<cluster_id>\")  # check auth_signals field\n")
+		sb.WriteString("# 4b. Search for specific auth headers across all traffic\n")
+		sb.WriteString("powhttp_search_entries(filters={header_contains: \"authorization\"})\n")
+		sb.WriteString("powhttp_search_entries(filters={header_contains: \"x-api-key\"})\n")
+		sb.WriteString("# 4c. Trace auth flow (token propagation, cookie origins)\n")
+		sb.WriteString("powhttp_trace_flow(seed_entry_id=\"<authenticated_entry>\")  # check edge_type_summary for auth_chain, session_cookie_origin\n")
 		sb.WriteString("```\n\n")
 
 		// 5. Output Format Specification
@@ -133,15 +142,22 @@ func HandleBuildAPIMap(cfg *Config) func(ctx context.Context, req *sdkmcp.GetPro
 		sb.WriteString("## Endpoint Description Details\n\n")
 		sb.WriteString("The describe tool provides:\n")
 		sb.WriteString("- **Typical Headers** - Common request headers and their frequency\n")
-		sb.WriteString("- **Auth Signals** - Cookies, Bearer tokens, API keys, session IDs\n")
+		sb.WriteString("- **Auth Signals** - `cookies_present`, `bearer_present`, `custom_auth_headers` (x-api-key, x-auth-token, x-access-token)\n")
 		sb.WriteString("- **Query Keys** - Stable parameters vs volatile/session-specific ones\n")
 		sb.WriteString("- **Body Shape** - JSON schema inferred from request/response bodies\n\n")
 		sb.WriteString("**IMPORTANT**: Always include body shape analysis for POST/PUT endpoints - the schema reveals data structure requirements.\n\n")
 
+		sb.WriteString("## Auth Discovery Strategy\n\n")
+		sb.WriteString("Use a layered approach to map authentication:\n")
+		sb.WriteString("1. **`describe_endpoint` -> `auth_signals`**: Fastest - shows cookies, bearer tokens, and custom auth headers per endpoint cluster\n")
+		sb.WriteString("2. **`search_entries` -> `header_contains`**: Find specific auth patterns across all traffic (e.g., `\"bearer\"`, `\"x-api-key\"`)\n")
+		sb.WriteString("3. **`trace_flow` -> `edge_type_summary`**: Map auth propagation - `auth_chain` (token reuse), `session_cookie_origin` (Set-Cookie -> Cookie), `same_auth` (shared Authorization), `same_api_key` (shared API key)\n\n")
+
 		sb.WriteString("## Tips\n\n")
 		sb.WriteString("- Start broad to see overall API surface, then narrow focus\n")
 		sb.WriteString("- High-count clusters (>100 requests) are usually core endpoints\n")
-		sb.WriteString("- Use `powhttp_trace_flow` to understand request sequences and dependencies\n")
+		sb.WriteString("- Use `powhttp_trace_flow` to understand request sequences, auth flows, and dependencies\n")
+		sb.WriteString("- Check `edge_type_summary` on trace results - `auth_chain` and `session_cookie_origin` edges reveal auth flows\n")
 		sb.WriteString("- Look for versioned endpoints (/v1/, /v2/) - document the latest version\n")
 
 		return &sdkmcp.GetPromptResult{

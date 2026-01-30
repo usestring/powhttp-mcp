@@ -73,6 +73,11 @@ func HandleGenerateScraper(cfg *Config) func(ctx context.Context, req *sdkmcp.Ge
 		} else {
 			sb.WriteString("   `powhttp_extract_endpoints()`\n")
 		}
+		sb.WriteString("1b. **Discover Auth Patterns** (use all three approaches):\n")
+		sb.WriteString("   - `powhttp_describe_endpoint(cluster_id=\"...\")` - Check `auth_signals` for cookies, bearer tokens, custom auth headers\n")
+		sb.WriteString("   - `powhttp_search_entries(filters={header_contains: \"authorization\"})` - Find Bearer/Basic auth across all traffic\n")
+		sb.WriteString("   - `powhttp_search_entries(filters={header_contains: \"x-api-key\"})` - Find API key auth\n")
+		sb.WriteString("   - `powhttp_trace_flow(seed_entry_id=\"...\")` - Check `edge_type_summary` for `auth_chain`, `session_cookie_origin`, `same_auth` edges to map auth flow\n")
 		sb.WriteString("2. **Analyze Structure**:\n")
 		sb.WriteString("   Pick the relevant `cluster_id` and run: `powhttp_describe_endpoint(cluster_id=\"...\")`\n")
 		sb.WriteString("3. **Get Fingerprint Data**:\n")

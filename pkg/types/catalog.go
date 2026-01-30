@@ -15,6 +15,7 @@ type Cluster struct {
 	PathTemplate    string   `json:"path_template"`
 	Count           int      `json:"count"`
 	ExampleEntryIDs []string `json:"example_entry_ids"`
+	ContentTypeHint string   `json:"content_type_hint,omitempty"`
 }
 
 // ExtractRequest contains parameters for cluster extraction.

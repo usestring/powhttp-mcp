@@ -1,6 +1,7 @@
 package indexer
 
 import (
+	"encoding/json"
 	"net/url"
 	"regexp"
 	"strings"
@@ -15,7 +16,7 @@ var (
 )
 
 // tokenDelimiters defines characters that separate tokens
-const tokenDelimiters = "/?&=.-_:"
+const tokenDelimiters = "/?&=.-_:;,@"
 
 // Tokenize splits a string into searchable tokens.
 // Splits on: / ? & = . - _ :
@@ -84,9 +85,14 @@ func TokenizeURL(rawURL string) []string {
 		parts = append(parts, parsed.Path)
 	}
 
-	// Add query parameter keys (not values)
-	for key := range parsed.Query() {
+	// Add query parameter keys and values
+	for key, values := range parsed.Query() {
 		parts = append(parts, key)
+		for _, v := range values {
+			if v != "" {
+				parts = append(parts, v)
+			}
+		}
 	}
 
 	return Tokenize(strings.Join(parts, " "))
@@ -95,6 +101,115 @@ func TokenizeURL(rawURL string) []string {
 // TokenizePath extracts tokens from just the path portion.
 func TokenizePath(path string) []string {
 	return Tokenize(path)
+}
+
+// TokenizeHeaders tokenizes full header fields ("name: value") using existing delimiter rules.
+func TokenizeHeaders(headers []HeaderValue) []string {
+	var parts []string
+	for _, hv := range headers {
+		parts = append(parts, hv.Name+": "+hv.Value)
+	}
+	if len(parts) == 0 {
+		return nil
+	}
+	return Tokenize(strings.Join(parts, " "))
+}
+
+// TokenizeBody tokenizes body content based on content type.
+// Handles JSON (keys + string values), HTML/XML (strip tags), plain text, and form-encoded.
+// Skips binary content types. Processes up to maxBytes of decoded body.
+func TokenizeBody(contentType string, bodyBytes []byte, maxBytes int) []string {
+	if len(bodyBytes) == 0 {
+		return nil
+	}
+
+	// Truncate to maxBytes
+	if maxBytes > 0 && len(bodyBytes) > maxBytes {
+		bodyBytes = bodyBytes[:maxBytes]
+	}
+
+	ct := strings.ToLower(contentType)
+
+	switch {
+	case strings.Contains(ct, "application/json"):
+		return tokenizeJSON(bodyBytes)
+	case strings.Contains(ct, "text/html"),
+		strings.Contains(ct, "text/xml"),
+		strings.Contains(ct, "application/xml"):
+		return tokenizeStripTags(bodyBytes)
+	case strings.Contains(ct, "text/plain"),
+		strings.Contains(ct, "text/csv"):
+		return Tokenize(string(bodyBytes))
+	case strings.Contains(ct, "application/x-www-form-urlencoded"):
+		return tokenizeFormEncoded(bodyBytes)
+	default:
+		// Skip binary and unknown content types
+		return nil
+	}
+}
+
+// tokenizeJSON extracts object keys and string values from JSON, then tokenizes them.
+func tokenizeJSON(data []byte) []string {
+	var raw any
+	if err := json.Unmarshal(data, &raw); err != nil {
+		// Fallback: try tokenizing as plain text
+		return Tokenize(string(data))
+	}
+
+	var parts []string
+	extractJSONStrings(raw, &parts)
+	if len(parts) == 0 {
+		return nil
+	}
+	return Tokenize(strings.Join(parts, " "))
+}
+
+// extractJSONStrings recursively extracts object keys and string values from parsed JSON.
+func extractJSONStrings(v any, out *[]string) {
+	switch val := v.(type) {
+	case map[string]any:
+		for k, child := range val {
+			*out = append(*out, k)
+			extractJSONStrings(child, out)
+		}
+	case []any:
+		for _, child := range val {
+			extractJSONStrings(child, out)
+		}
+	case string:
+		*out = append(*out, val)
+	}
+}
+
+// tagStripper matches HTML/XML tags.
+var tagStripper = regexp.MustCompile(`<[^>]*>`)
+
+// tokenizeStripTags strips HTML/XML tags and tokenizes the visible text.
+func tokenizeStripTags(data []byte) []string {
+	text := tagStripper.ReplaceAllString(string(data), " ")
+	return Tokenize(text)
+}
+
+// tokenizeFormEncoded parses form-encoded data and tokenizes keys and values.
+func tokenizeFormEncoded(data []byte) []string {
+	values, err := url.ParseQuery(string(data))
+	if err != nil {
+		return Tokenize(string(data))
+	}
+
+	var parts []string
+	for key, vals := range values {
+		parts = append(parts, key)
+		for _, v := range vals {
+			if v != "" {
+				parts = append(parts, v)
+			}
+		}
+	}
+	if len(parts) == 0 {
+		return nil
+	}
+	return Tokenize(strings.Join(parts, " "))
 }
 
 // NormalizePath normalizes a full path by normalizing each segment.

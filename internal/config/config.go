@@ -22,6 +22,8 @@ type Config struct {
 	H2MaxEventsDefault   int           // H2_MAX_EVENTS_DEFAULT, default 200
 	EntryCacheMaxItems   int           // ENTRY_CACHE_MAX_ITEMS, default 512
 	ResourceMaxBodyBytes int           // RESOURCE_MAX_BODY_BYTES, default 65536 (64KB)
+	IndexBody            bool          // INDEX_BODY, default false
+	IndexBodyMaxBytes    int           // INDEX_BODY_MAX_BYTES, default 65536
 
 	// Logging configuration
 	LogLevel      string // LOG_LEVEL, default "info"
@@ -48,6 +50,8 @@ func Load() *Config {
 		H2MaxEventsDefault:   getEnvInt("H2_MAX_EVENTS_DEFAULT", 200),
 		EntryCacheMaxItems:   getEnvInt("ENTRY_CACHE_MAX_ITEMS", 512),
 		ResourceMaxBodyBytes: getEnvInt("RESOURCE_MAX_BODY_BYTES", 65536),
+		IndexBody:            getEnvBool("INDEX_BODY", false),
+		IndexBodyMaxBytes:    getEnvInt("INDEX_BODY_MAX_BYTES", 65536),
 
 		LogLevel:      getEnvString("LOG_LEVEL", "info"),
 		LogFile:       getEnvString("LOG_FILE", ""),

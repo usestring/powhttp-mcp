@@ -30,6 +30,7 @@ type DiffOptions struct {
 // DiffEntriesOutput is the output for powhttp_diff_entries.
 type DiffEntriesOutput struct {
 	Diff     *types.DiffResult  `json:"diff"`
+	Severity string             `json:"severity,omitempty"`
 	Resource *types.ResourceRef `json:"resource,omitempty"`
 }
 
@@ -72,7 +73,8 @@ func ToolDiffEntries(d *Deps) func(ctx context.Context, req *sdkmcp.CallToolRequ
 		}
 
 		return nil, DiffEntriesOutput{
-			Diff: result,
+			Diff:     result,
+			Severity: computeDiffSeverity(result),
 			Resource: &types.ResourceRef{
 				URI:  "powhttp://diff/" + input.BaselineEntryID + "/" + input.CandidateEntryID,
 				MIME: MimeJSON,
@@ -80,4 +82,49 @@ func ToolDiffEntries(d *Deps) func(ctx context.Context, req *sdkmcp.CallToolRequ
 			},
 		}, nil
 	}
+}
+
+// computeDiffSeverity computes severity from diff result.
+// "high": JA4 TLS fingerprint mismatch or protocol mismatch or many missing headers.
+// "medium": Header order significantly different or a few missing/extra headers.
+// "low": Only noisy diffs.
+// "none": No meaningful differences.
+func computeDiffSeverity(result *types.DiffResult) string {
+	if result == nil {
+		return "none"
+	}
+
+	imp := result.ImportantDiffs
+
+	// High: JA4 TLS fingerprint mismatch or protocol mismatch
+	if imp.TLS != nil && imp.TLS.JA4Different {
+		return "high"
+	}
+	if imp.Protocol != nil {
+		return "high"
+	}
+
+	// High: many missing headers (3+)
+	missingCount := len(imp.HeadersMissing) + len(imp.HeadersExtra)
+	if missingCount >= 3 {
+		return "high"
+	}
+
+	// Medium: header order changes or some missing/extra headers
+	if imp.HeaderOrderChanges != nil || missingCount > 0 || len(imp.HeadersValueChanged) > 0 {
+		return "medium"
+	}
+
+	// Medium: HTTP/2 diffs
+	if imp.HTTP2 != nil {
+		return "medium"
+	}
+
+	// Low: only noisy diffs
+	noisy := result.NoisyDiffs
+	if len(noisy.IgnoredHeaders) > 0 || len(noisy.QueryKeyDiffs) > 0 {
+		return "low"
+	}
+
+	return "none"
 }
