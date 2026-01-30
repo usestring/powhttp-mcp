@@ -13,6 +13,7 @@ import (
 	"github.com/usestring/powhttp-mcp/internal/indexer"
 	"github.com/usestring/powhttp-mcp/internal/search"
 	"github.com/usestring/powhttp-mcp/pkg/client"
+	"github.com/usestring/powhttp-mcp/pkg/textquery"
 )
 
 // Deps contains all dependencies needed by tool handlers.

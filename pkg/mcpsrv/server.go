@@ -17,6 +17,7 @@ import (
 	"github.com/usestring/powhttp-mcp/internal/mcp/tools"
 	"github.com/usestring/powhttp-mcp/internal/search"
 	"github.com/usestring/powhttp-mcp/pkg/client"
+	"github.com/usestring/powhttp-mcp/pkg/textquery"
 )
 
 // Server is the powhttp MCP server.
@@ -81,6 +82,7 @@ func NewServer(c *client.Client, opts ...Option) (*Server, error) {
 	clusterEngine := catalog.NewClusterEngine(idx, cfg.config, clusterStore)
 	describeEngine := catalog.NewDescribeEngine(idx, c, entryCache, cfg.config, clusterStore)
 	flowEngine := flow.NewFlowEngine(idx, cfg.config)
+	textQueryEngine := textquery.NewEngine()
 
 	// Create deps for internal tools and custom tools
 	toolDeps := &tools.Deps{
@@ -95,6 +97,7 @@ func NewServer(c *client.Client, opts ...Option) (*Server, error) {
 		Describe:     describeEngine,
 		ClusterStore: clusterStore,
 		Flow:         flowEngine,
+		TextQuery:    textQueryEngine,
 	}
 
 	// Create public deps (same values, different type for public API)
@@ -110,6 +113,7 @@ func NewServer(c *client.Client, opts ...Option) (*Server, error) {
 		Describe:     describeEngine,
 		ClusterStore: clusterStore,
 		Flow:         flowEngine,
+		TextQuery:    textQueryEngine,
 	}
 
 	// Build internal server options
