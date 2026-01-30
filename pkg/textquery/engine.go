@@ -90,7 +90,7 @@ func (e *Engine) queryJQ(body []byte, contentType, expression string, maxResults
 		}
 
 		var err error
-		jsonBytes, err = json.Marshal(convertYAMLToJSON(yamlData))
+		jsonBytes, err = json.Marshal(ConvertYAMLToJSON(yamlData))
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert YAML to JSON: %w", err)
 		}
@@ -109,27 +109,27 @@ func (e *Engine) queryJQ(body []byte, contentType, expression string, maxResults
 	}, nil
 }
 
-// convertYAMLToJSON recursively converts YAML-parsed values to JSON-compatible types.
+// ConvertYAMLToJSON recursively converts YAML-parsed values to JSON-compatible types.
 // yaml.v3 produces map[string]any for mappings, but may produce other map types
-// for non-string keys.
-func convertYAMLToJSON(v any) any {
+// for non-string keys. Exported for reuse by pkg/shape.
+func ConvertYAMLToJSON(v any) any {
 	switch val := v.(type) {
 	case map[string]any:
 		result := make(map[string]any, len(val))
 		for k, v := range val {
-			result[k] = convertYAMLToJSON(v)
+			result[k] = ConvertYAMLToJSON(v)
 		}
 		return result
 	case map[any]any:
 		result := make(map[string]any, len(val))
 		for k, v := range val {
-			result[fmt.Sprintf("%v", k)] = convertYAMLToJSON(v)
+			result[fmt.Sprintf("%v", k)] = ConvertYAMLToJSON(v)
 		}
 		return result
 	case []any:
 		result := make([]any, len(val))
 		for i, v := range val {
-			result[i] = convertYAMLToJSON(v)
+			result[i] = ConvertYAMLToJSON(v)
 		}
 		return result
 	default:

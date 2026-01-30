@@ -12,27 +12,29 @@ import (
 	"github.com/usestring/powhttp-mcp/internal/config"
 	"github.com/usestring/powhttp-mcp/internal/indexer"
 	"github.com/usestring/powhttp-mcp/pkg/client"
-	"github.com/usestring/powhttp-mcp/pkg/jsonschema"
+	"github.com/usestring/powhttp-mcp/pkg/shape"
 	"github.com/usestring/powhttp-mcp/pkg/types"
 )
 
 // DescribeEngine generates detailed endpoint descriptions.
 type DescribeEngine struct {
-	indexer *indexer.Indexer
-	client  *client.Client
-	cache   *cache.EntryCache
-	config  *config.Config
-	store   *ClusterStore
+	indexer      *indexer.Indexer
+	client       *client.Client
+	cache        *cache.EntryCache
+	config       *config.Config
+	store        *ClusterStore
+	shapeEngine  *shape.Engine
 }
 
 // NewDescribeEngine creates a new DescribeEngine.
 func NewDescribeEngine(idx *indexer.Indexer, c *client.Client, cache *cache.EntryCache, cfg *config.Config, store *ClusterStore) *DescribeEngine {
 	return &DescribeEngine{
-		indexer: idx,
-		client:  c,
-		cache:   cache,
-		config:  cfg,
-		store:   store,
+		indexer:      idx,
+		client:       c,
+		cache:        cache,
+		config:       cfg,
+		store:        store,
+		shapeEngine:  shape.NewEngine(),
 	}
 }
 
@@ -64,7 +66,8 @@ func (d *DescribeEngine) Describe(ctx context.Context, req *types.DescribeReques
 	headers := analyzeHeaders(entries)
 	authSignals := detectAuthSignals(entries)
 	queryKeys := analyzeQueryKeys(entries)
-	bodySchema := extractRequestBodySchema(entries)
+	reqShape := d.extractBodyShape(entries, "request")
+	respShape := d.extractBodyShape(entries, "response")
 
 	// Build examples
 	examples := make([]types.ExampleEntry, 0, len(entries))
@@ -88,7 +91,8 @@ func (d *DescribeEngine) Describe(ctx context.Context, req *types.DescribeReques
 		TypicalHeaders:    headers,
 		AuthSignals:       authSignals,
 		QueryKeys:         queryKeys,
-		RequestBodySchema: bodySchema,
+		RequestBodyShape:  reqShape,
+		ResponseBodyShape: respShape,
 		Examples:          examples,
 	}, nil
 }
@@ -279,54 +283,71 @@ func analyzeQueryKeys(entries []*client.SessionEntry) types.QueryKeyAnalysis {
 	return analysis
 }
 
-// extractRequestBodySchema infers JSON Schema from request bodies.
-func extractRequestBodySchema(entries []*client.SessionEntry) *types.RequestBodySchema {
-	var samples [][]byte
+// extractBodyShape uses the shape engine to analyze bodies from entries.
+// target is "request" or "response".
+func (d *DescribeEngine) extractBodyShape(entries []*client.SessionEntry, target string) *shape.Result {
+	var bodies [][]byte
 	var contentType string
 
 	for _, entry := range entries {
-		if entry.Request.Body == nil {
+		var bodyPtr *string
+		var headers client.Headers
+
+		if target == "request" {
+			bodyPtr = entry.Request.Body
+			headers = entry.Request.Headers
+		} else {
+			if entry.Response == nil {
+				continue
+			}
+			bodyPtr = entry.Response.Body
+			headers = entry.Response.Headers
+		}
+
+		if bodyPtr == nil {
 			continue
 		}
 
-		// Check content type
+		// Get content type
 		ct := ""
-		for _, header := range entry.Request.Headers {
+		for _, header := range headers {
 			if len(header) >= 2 && strings.ToLower(header[0]) == "content-type" {
-				ct = strings.ToLower(header[1])
+				ct = header[1]
 				break
 			}
 		}
 
-		if !strings.Contains(ct, "json") {
+		if ct == "" {
 			continue
 		}
 
+		// Capture the first non-empty content-type
+		if contentType == "" {
+			contentType = ct
+		}
+
 		// Decode body
-		bodyBytes, err := base64.StdEncoding.DecodeString(*entry.Request.Body)
+		bodyBytes, err := base64.StdEncoding.DecodeString(*bodyPtr)
 		if err != nil {
 			continue
 		}
 
-		samples = append(samples, bodyBytes)
-		if contentType == "" {
-			contentType = ct
-		}
+		bodies = append(bodies, bodyBytes)
 	}
 
-	if len(samples) == 0 {
+	if len(bodies) == 0 || contentType == "" {
 		return nil
 	}
 
-	inferred, err := jsonschema.Infer(samples...)
-	if err != nil || inferred == nil {
+	result, err := d.shapeEngine.Analyze(bodies, contentType)
+	if err != nil || result == nil {
 		return nil
 	}
 
-	return &types.RequestBodySchema{
-		Schema:      inferred.Schema,
-		SampleCount: inferred.SampleCount,
-		AllMatch:    inferred.AllMatch,
-		ContentType: contentType,
+	// Don't return skipped results
+	if result.Skipped {
+		return nil
 	}
+
+	return result
 }

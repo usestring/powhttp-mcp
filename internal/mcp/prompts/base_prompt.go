@@ -72,8 +72,16 @@ powhttp_fingerprint(entry_id)
 - ` + "`.[] | select(.type == \"product\")`" + ` - Filter array elements
 - ` + "`. | keys`" + ` - List all top-level keys
 
+## Understand Data Shape
+Three tools for understanding body structure, from quick to deep:
+1. **Quick overview**: ` + "`powhttp_describe_endpoint(cluster_id)`" + ` - includes ` + "`request_body_shape`" + ` and ` + "`response_body_shape`" + ` (JSON schema, XML hierarchy, HTML outline, etc.)
+2. **Deep analysis**: ` + "`powhttp_infer_schema(entry_ids or cluster_id)`" + ` - multi-sample merged schema with field statistics (frequency, required/optional, format detection, enums). Handles all content types automatically.
+3. **Single entry**: ` + "`powhttp_get_entry(entry_id, body_mode: \"schema\")`" + ` - quick look at one entry's structure
+
+**Workflow**: Use ` + "`powhttp_infer_schema`" + ` before ` + "`powhttp_query_body`" + ` to discover which fields exist and their types, then extract specific values with ` + "`powhttp_query_body`" + `.
+
 ## Tips
-- **Any content type**: ` + "`query_body`" + ` auto-detects the expression language from the content-type
+- **Any content type**: ` + "`powhttp_query_body`" + ` auto-detects the expression language from the content-type
 - **Use clusters**: ` + "`powhttp_extract_endpoints`" + ` groups similar requests for batch querying
 - **Check ` + "`content_type_hint`" + `** on clusters to pick the right expression syntax
 - **Deduplicate**: Set ` + "`deduplicate: true`" + ` to remove duplicate values

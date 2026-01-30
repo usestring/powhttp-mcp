@@ -111,7 +111,7 @@ func ToolExtractEndpoints(d *Deps) func(ctx context.Context, req *sdkmcp.CallToo
 			nextOffset := input.Offset + len(resp.Clusters)
 			hint = fmt.Sprintf("Showing %d of %d clusters. Use scope.host to filter, or offset=%d for next page.", len(resp.Clusters), resp.TotalCount, nextOffset)
 		} else {
-			hint = fmt.Sprintf("Found %d clusters. Use describe_endpoint(cluster_id=...) for schema and examples.", len(resp.Clusters))
+			hint = fmt.Sprintf("Found %d clusters. Use powhttp_describe_endpoint(cluster_id=...) for schema and examples.", len(resp.Clusters))
 		}
 
 		return nil, ExtractEndpointsOutput{
@@ -152,7 +152,7 @@ func ToolDescribeEndpoint(d *Deps) func(ctx context.Context, req *sdkmcp.CallToo
 		}
 
 		// Build contextual hint
-		hint := fmt.Sprintf("Use query_body(cluster_id=%q, expression='.') to explore response structure.", input.ClusterID)
+		hint := fmt.Sprintf("Use powhttp_query_body(cluster_id=%q, expression='.') to explore response structure, or powhttp_infer_schema(cluster_id=%q) for deeper field statistics.", input.ClusterID, input.ClusterID)
 
 		return nil, DescribeEndpointOutput{
 			Description: desc,

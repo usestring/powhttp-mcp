@@ -1,5 +1,7 @@
 package types
 
+import "github.com/usestring/powhttp-mcp/pkg/shape"
+
 // ClusterKey is the composite key for clustering: host + method + path_template.
 type ClusterKey struct {
 	Host         string
@@ -69,8 +71,9 @@ type EndpointDescription struct {
 	TypicalHeaders    []HeaderFrequency  `json:"typical_headers"`
 	AuthSignals       AuthSignals        `json:"auth_signals"`
 	QueryKeys         QueryKeyAnalysis   `json:"query_keys"`
-	RequestBodySchema *RequestBodySchema `json:"request_body_schema,omitempty"`
-	Examples          []ExampleEntry     `json:"examples"`
+	RequestBodyShape  *shape.Result `json:"request_body_shape,omitempty"`
+	ResponseBodyShape *shape.Result `json:"response_body_shape,omitempty"`
+	Examples          []ExampleEntry `json:"examples"`
 }
 
 // HeaderFrequency tracks how often a header appears.
@@ -90,17 +93,6 @@ type AuthSignals struct {
 type QueryKeyAnalysis struct {
 	Stable   []string `json:"stable"`   // Keys present in most requests
 	Volatile []string `json:"volatile"` // Keys that vary (timestamps, nonces)
-}
-
-// RequestBodySchema describes the JSON Schema of request bodies.
-type RequestBodySchema struct {
-	// JSON Schema is dynamic, could probably type but will cause import cycle
-	// We dont access any fields etc so will not worry for now
-	// TODO: enforce strict typing
-	Schema      any    `json:"schema"`
-	SampleCount int    `json:"sample_count"`           // Number of samples used
-	AllMatch    bool   `json:"all_match"`              // True if all samples had identical schema
-	ContentType string `json:"content_type,omitempty"` // Content-Type of the bodies
 }
 
 // ExampleEntry contains a sample entry from the cluster.
