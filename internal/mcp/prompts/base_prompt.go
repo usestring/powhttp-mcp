@@ -46,15 +46,9 @@ func HandleBasePrompt(cfg *Config) func(ctx context.Context, req *sdkmcp.GetProm
 
 ## Recommended Workflows
 
-### Extract Data from Responses
+### Extract Data from JSON Responses
 1. **Search**: Find entries by host/path
 2. **Query directly**: ` + "`powhttp_query_body(entry_ids: [...], expression: \".data.items[].name\")`" + `
-   - **JSON/YAML**: JQ expressions (auto-detected). E.g., ` + "`.data.items[].name`" + `
-   - **HTML**: CSS selectors. E.g., ` + "`h1.title`" + `, ` + "`.product-price`" + `
-   - **XML**: XPath. E.g., ` + "`//item/name`" + `
-   - **Plain text**: Regex. E.g., ` + "`status:\\s*(\\w+)`" + `
-   - **Forms**: Key name. E.g., ` + "`email`" + ` or ` + "`*`" + ` for all
-   - Set ` + "`mode`" + ` to override auto-detection
 
 ### Discover Authentication Patterns
 1. **Cluster-level**: ` + "`powhttp_describe_endpoint(cluster_id)`" + ` - check ` + "`auth_signals`" + ` (cookies, bearer, custom headers)
@@ -73,9 +67,9 @@ powhttp_fingerprint(entry_id)
 - ` + "`. | keys`" + ` - List all top-level keys
 
 ## Tips
-- **Any content type**: ` + "`query_body`" + ` auto-detects the expression language from the content-type
+- **Check content type first**: Only query JSON responses (` + "`application/json`" + `)
 - **Use clusters**: ` + "`powhttp_extract_endpoints`" + ` groups similar requests for batch querying
-- **Check ` + "`content_type_hint`" + `** on clusters to pick the right expression syntax
+- **Check ` + "`content_type_hint`" + `** on clusters before calling ` + "`query_body`" + ` or ` + "`validate_schema`" + `
 - **Deduplicate**: Set ` + "`deduplicate: true`" + ` to remove duplicate values
 `
 
