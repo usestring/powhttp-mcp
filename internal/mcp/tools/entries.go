@@ -7,6 +7,7 @@ import (
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/usestring/powhttp-mcp/pkg/client"
+	"github.com/usestring/powhttp-mcp/pkg/contenttype"
 	"github.com/usestring/powhttp-mcp/pkg/jsoncompact"
 	"github.com/usestring/powhttp-mcp/pkg/types"
 )
@@ -164,7 +165,7 @@ func ToolGetEntry(d *Deps) func(ctx context.Context, req *sdkmcp.CallToolRequest
 		if entry.Response != nil {
 			respContentType = entry.Response.Headers.Get("content-type")
 		}
-		isJSONResp := isJSONContentType(respContentType)
+		isJSONResp := contenttype.IsJSON(respContentType)
 
 		// Customize hint based on body mode and content type
 		var hint string

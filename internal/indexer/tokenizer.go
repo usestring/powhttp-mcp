@@ -6,6 +6,8 @@ import (
 	"regexp"
 	"strings"
 	"unicode"
+
+	"github.com/usestring/powhttp-mcp/pkg/contenttype"
 )
 
 var (
@@ -128,22 +130,17 @@ func TokenizeBody(contentType string, bodyBytes []byte, maxBytes int) []string {
 		bodyBytes = bodyBytes[:maxBytes]
 	}
 
-	ct := strings.ToLower(contentType)
-
-	switch {
-	case strings.Contains(ct, "application/json"):
+	switch contenttype.Classify(contentType) {
+	case contenttype.JSON:
 		return tokenizeJSON(bodyBytes)
-	case strings.Contains(ct, "text/html"),
-		strings.Contains(ct, "text/xml"),
-		strings.Contains(ct, "application/xml"):
+	case contenttype.HTML, contenttype.XML:
 		return tokenizeStripTags(bodyBytes)
-	case strings.Contains(ct, "text/plain"),
-		strings.Contains(ct, "text/csv"):
+	case contenttype.Text, contenttype.CSV:
 		return Tokenize(string(bodyBytes))
-	case strings.Contains(ct, "application/x-www-form-urlencoded"):
+	case contenttype.Form:
 		return tokenizeFormEncoded(bodyBytes)
 	default:
-		// Skip binary and unknown content types
+		// Skip binary, YAML, and unknown content types
 		return nil
 	}
 }
