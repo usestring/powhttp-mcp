@@ -80,15 +80,6 @@ Three tools for understanding body structure, from quick to deep:
 
 **Workflow**: Use ` + "`powhttp_infer_schema`" + ` before ` + "`powhttp_query_body`" + ` to discover which fields exist and their types, then extract specific values with ` + "`powhttp_query_body`" + `.
 
-## GraphQL APIs
-GraphQL APIs funnel all requests through a single POST endpoint (e.g., /graphql), so ` + "`powhttp_extract_endpoints`" + ` clusters them as one endpoint. Use the dedicated GraphQL tools instead:
-
-1. **Survey**: ` + "`powhttp_graphql_operations(scope={host: ...})`" + ` - clusters by operation name/type (the GraphQL equivalent of ` + "`powhttp_extract_endpoints`" + `)
-2. **Inspect**: ` + "`powhttp_graphql_inspect(operation_name=..., host=...)`" + ` - parses variables_schema, response_schema, and field_stats
-3. **Errors**: ` + "`powhttp_graphql_errors(operation_name=..., host=...)`" + ` - finds partial failures (data + errors) vs full failures (null data)
-
-**Auto-detection**: ` + "`powhttp_extract_endpoints`" + ` automatically detects GraphQL endpoints by probing request bodies and emits a hint with the host and request count. Follow that hint directly -- call ` + "`powhttp_graphql_operations`" + ` with the suggested ` + "`scope.host`" + `. ` + "`powhttp_graphql_operations`" + ` validates all POST request bodies regardless of URL path, so it works for custom GraphQL endpoints too -- just call it without a scope to search all POST traffic.
-
 ## Tips
 - **Any content type**: ` + "`powhttp_query_body`" + ` auto-detects the expression language from the content-type
 - **Use clusters**: ` + "`powhttp_extract_endpoints`" + ` groups similar requests for batch querying

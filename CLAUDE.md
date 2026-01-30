@@ -41,14 +41,10 @@ pkg/
 ├── client/               powhttp API client
 ├── mcpsrv/               MCP server wrapper (functional options)
 ├── types/                Shared response types
-├── jsonschema/           JSON schema inference
-├── graphql/              GraphQL request body parsing
-├── shape/                Unified shape analysis (JSON, XML, CSV, HTML)
-├── textquery/            Multi-format query engine (JQ, CSS, XPath, regex, form keys)
-└── contenttype/          Content-type detection and classification
+└── jsonschema/           JSON schema inference
 internal/
 ├── mcp/
-│   ├── tools/            Tool implementations (17 tools)
+│   ├── tools/            Tool implementations
 │   ├── prompts/          Guided workflows
 │   └── server.go         Server initialization
 ├── indexer/              Full-text search (Roaring bitmaps)
@@ -134,19 +130,11 @@ if errors.As(err, &apiErr) {
 
 **Deps struct provides all dependencies:**
 ```go
-d.Client            // powhttp API client
-d.Cache             // LRU entry cache
-d.Indexer           // full-text search
-d.ClusterStore      // stored cluster results
-d.Config            // environment config
-d.Search            // search engine
-d.Fingerprint       // TLS fingerprint engine
-d.Diff              // entry diff engine
-d.Cluster           // endpoint clustering engine
-d.Describe          // endpoint description engine
-d.Flow              // request flow tracing engine
-d.TextQuery         // multi-format query engine
-d.GraphQLParseCache // shared GraphQL parse cache (sync.Map)
+d.Client       // powhttp API client
+d.Cache        // LRU entry cache
+d.Indexer      // full-text search
+d.ClusterStore // stored cluster results
+d.Config       // environment config
 ```
 
 ## Code Style

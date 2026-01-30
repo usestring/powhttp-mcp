@@ -30,8 +30,6 @@ https://github.com/user-attachments/assets/be098e9d-d700-491c-ae7f-5afb12732728
 - **Anti-Bot Detection** - Compare browser vs program traffic to identify detection vectors
 - **Fingerprinting** - Generate TLS (JA3/JA4) and HTTP/2 fingerprints
 - **API Mapping** - Cluster and catalog API endpoints from captured traffic
-- **GraphQL Analysis** - Cluster operations, inspect schemas, and extract errors from GraphQL APIs
-- **Schema Inference** - Infer merged schemas from multiple response bodies with field statistics
 - **Flow Tracing** - Trace related requests (redirects, dependent calls)
 - **Schema Validation** - Validate response bodies against Go structs, Zod, or JSON Schema
 - **Scraper Generation** - Generate PoC Go scrapers from captured traffic
@@ -203,7 +201,7 @@ powhttp-mcp provides 4 prompts for guided workflows:
 
 ## MCP Tools
 
-powhttp-mcp provides 17 tools for HTTP traffic analysis:
+powhttp-mcp provides 13 tools for HTTP traffic analysis:
 
 | Tool | Description |
 |------|-------------|
@@ -220,10 +218,6 @@ powhttp-mcp provides 17 tools for HTTP traffic analysis:
 | `powhttp_trace_flow` | Trace related requests around a seed entry |
 | `powhttp_validate_schema` | Validate entry bodies against a schema |
 | `powhttp_query_body` | Extract specific fields from bodies using JQ expressions |
-| `powhttp_infer_schema` | Infer merged schema from multiple entry bodies with field statistics |
-| `powhttp_graphql_operations` | Cluster GraphQL traffic by operation name and type |
-| `powhttp_graphql_inspect` | Parse and inspect individual GraphQL operations |
-| `powhttp_graphql_errors` | Extract and categorize GraphQL errors from responses |
 
 See [internal/mcp/README.md](internal/mcp/README.md) for detailed tool documentation.
 
