@@ -7,20 +7,21 @@ import (
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/usestring/powhttp-mcp/pkg/contenttype"
+	"github.com/usestring/powhttp-mcp/pkg/textquery"
 	"github.com/usestring/powhttp-mcp/pkg/types"
 )
 
 // QueryBodyInput is the input for powhttp_query_body.
 type QueryBodyInput struct {
 	SessionID   string   `json:"session_id,omitempty" jsonschema:"Session ID (default: active)"`
-	EntryIDs    []string `json:"entry_ids,omitempty" jsonschema:"Query these specific entry IDs"`
-	ClusterID   string   `json:"cluster_id,omitempty" jsonschema:"Query all entries in this cluster"`
-	Expression  string   `json:"expression" jsonschema:"required,Extraction expression (JQ for JSON/YAML, CSS selector for HTML, XPath for XML, regex for plain text, form key for form-encoded)"`
-	Mode        string   `json:"mode,omitempty" jsonschema:"Expression language: jq, css, xpath, regex, form (auto-detected from content-type if omitted)"`
-	Target      string   `json:"target,omitempty" jsonschema:"Which body to query: request, response, or both (default: response)"`
+	EntryIDs    []string `json:"entry_ids,omitempty" jsonschema:"Entry IDs to query (from search_entries results). Either entry_ids or cluster_id is required."`
+	ClusterID   string   `json:"cluster_id,omitempty" jsonschema:"Cluster ID to query all its entries (from extract_endpoints). Either cluster_id or entry_ids is required."`
+	Expression  string   `json:"expression" jsonschema:"required,Extraction expression matching the body content type. Examples -- JQ: '.data.items[].name'; CSS: 'h1.title'; XPath: '//item/name'; regex: 'token=([\\\\w]+)'; form: 'email' or '*' for all keys"`
+	Mode        string   `json:"mode,omitempty" jsonschema:"Override auto-detection with an explicit expression language. Valid values: jq, css, xpath, regex, form. Omit to auto-detect from content-type (recommended)."`
+	Target      string   `json:"target,omitempty" jsonschema:"Which body to query: response (default), request, or both"`
 	Deduplicate bool     `json:"deduplicate,omitempty" jsonschema:"Remove duplicate values (default: false)"`
-	MaxEntries  int      `json:"max_entries,omitempty" jsonschema:"Max entries to process (default: 20, max: 100)"`
-	MaxResults  int      `json:"max_results,omitempty" jsonschema:"Max results to return (default: 1000)"`
+	MaxEntries  int      `json:"max_entries,omitempty" jsonschema:"Max HTTP entries to inspect (default: 20, max: 100). Limits how many entries from entry_ids or cluster are processed."`
+	MaxResults  int      `json:"max_results,omitempty" jsonschema:"Max extracted values to return across all entries (default: 1000). Increase if results are truncated."`
 }
 
 // ToolQueryBody extracts data from request/response bodies using expressions.
@@ -82,7 +83,8 @@ func ToolQueryBody(d *Deps) func(ctx context.Context, req *sdkmcp.CallToolReques
 			maxResults = 1000
 		}
 
-		truncatedEntries := len(entryIDs) > maxEntries
+		originalEntryCount := len(entryIDs)
+		truncatedEntries := originalEntryCount > maxEntries
 		if truncatedEntries {
 			entryIDs = entryIDs[:maxEntries]
 		}
@@ -98,6 +100,7 @@ func ToolQueryBody(d *Deps) func(ctx context.Context, req *sdkmcp.CallToolReques
 		}
 
 		seen := make(map[string]bool)
+		var lastMode string
 
 		for _, entryID := range entryIDs {
 			entry, err := d.FetchEntry(ctx, sessionID, entryID)
@@ -166,6 +169,8 @@ func ToolQueryBody(d *Deps) func(ctx context.Context, req *sdkmcp.CallToolReques
 					continue
 				}
 
+				lastMode = result.Mode
+
 				// Propagate runtime warnings (e.g., JQ evaluation errors)
 				for _, e := range result.Errors {
 					output.Errors = append(output.Errors, fmt.Sprintf("%s:%s: %s", entryID, t, e))
@@ -204,17 +209,41 @@ func ToolQueryBody(d *Deps) func(ctx context.Context, req *sdkmcp.CallToolReques
 
 		// Hints
 		if output.Summary.TotalValues == 0 && output.Summary.EntriesProcessed > 0 {
-			output.Hints = append(output.Hints, "No values matched. For JSON/YAML try '.', 'keys', or '.data.items[]'. For HTML use CSS selectors (e.g., 'h1'). Set mode to force a specific language.")
+			hint := "No values extracted."
+			if lastMode != "" {
+				hint += fmt.Sprintf(" Auto-detected mode: %s.", lastMode)
+			}
+			switch lastMode {
+			case textquery.ModeJQ:
+				hint += " Try '.', 'keys', or '.data.items[]' to explore the structure."
+			case textquery.ModeCSS:
+				hint += " Try '*' to match all elements, or check the selector syntax."
+			case textquery.ModeXPath:
+				hint += " Try '//*' to match all elements, or check the expression."
+			default:
+				hint += " Try a broader expression or set mode explicitly if auto-detection chose wrong."
+			}
+			output.Hints = append(output.Hints, hint)
 		}
 		if output.Summary.Truncated {
-			nextMax := maxResults * 2
-			if nextMax > 10000 {
-				nextMax = 10000
+			if truncatedEntries && len(output.Values) < maxResults {
+				output.Hints = append(output.Hints, fmt.Sprintf(
+					"Processed %d of %d entries (max_entries=%d). Increase max_entries or use entry_ids to target specific entries.",
+					maxEntries, originalEntryCount, maxEntries))
+			} else if len(output.Values) >= maxResults {
+				nextMax := maxResults * 2
+				if nextMax > 10000 {
+					nextMax = 10000
+				}
+				output.Hints = append(output.Hints, fmt.Sprintf(
+					"Value limit reached (%d). Narrow with entry_ids or increase max_results=%d.",
+					maxResults, nextMax))
 			}
-			output.Hints = append(output.Hints, fmt.Sprintf("Truncated at %d values. Use entry_ids filter or max_results=%d for more.", maxResults, nextMax))
 		}
-		if output.Summary.TotalValues > 0 && !output.Summary.Truncated {
-			output.Hints = append(output.Hints, "Query complete.")
+		if len(output.Errors) > 0 && output.Summary.TotalValues > 0 {
+			output.Hints = append(output.Hints, fmt.Sprintf(
+				"Partial results: %d entries had errors. Check the errors array for details.",
+				output.Summary.EntriesSkipped))
 		}
 
 		return nil, output, nil
