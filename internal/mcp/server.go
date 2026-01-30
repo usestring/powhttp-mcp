@@ -76,7 +76,8 @@ func NewServer(deps *tools.Deps, opts ...ServerOption) (*Server, error) {
 
 	// Create prompt config
 	promptCfg := &prompts.Config{
-		PowHTTPProxyURL: deps.Config.PowHTTPProxyURL,
+		PowHTTPProxyURL:  deps.Config.PowHTTPProxyURL,
+		BodyIndexEnabled: deps.Config.IndexBody,
 	}
 
 	// Register builtin capabilities if enabled

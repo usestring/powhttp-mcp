@@ -4,5 +4,6 @@ package prompts
 
 // Config holds configuration needed by prompts.
 type Config struct {
-	PowHTTPProxyURL string
+	PowHTTPProxyURL  string
+	BodyIndexEnabled bool
 }

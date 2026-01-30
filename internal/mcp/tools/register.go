@@ -19,9 +19,18 @@ func Register(srv *sdkmcp.Server, d *Deps) {
 	}, ToolSessionActive(d))
 
 	// Tool 3: powhttp_search_entries
+	searchDesc := "Search HTTP entries with filters and free text query. Free-text query searches across URLs, query parameters, and headers"
+	if d.Config.IndexBody {
+		searchDesc += " and body content"
+	}
+	searchDesc += " (tokens ANDed). Use header_contains for substring matching on header fields"
+	if d.Config.IndexBody {
+		searchDesc += ", body_contains for body text substring matching"
+	}
+	searchDesc += "."
 	sdkmcp.AddTool(srv, &sdkmcp.Tool{
 		Name:        "powhttp_search_entries",
-		Description: "Search HTTP entries with filters and free text query. Free-text query searches across URLs, query parameters, headers, and body content (tokens ANDed). Use header_contains for substring matching on header fields, body_contains for body text substring matching.",
+		Description: searchDesc,
 	}, ToolSearchEntries(d))
 
 	// Tool 4: powhttp_get_entry
