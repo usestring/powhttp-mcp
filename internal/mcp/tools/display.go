@@ -4,10 +4,10 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/usestring/powhttp-mcp/pkg/client"
-	"github.com/usestring/powhttp-mcp/pkg/contenttype"
 	"github.com/usestring/powhttp-mcp/pkg/jsoncompact"
 	"github.com/usestring/powhttp-mcp/pkg/jsonschema"
 )
@@ -71,12 +71,12 @@ func TransformBody(encoded *string, contentType string, opts BodyTransformOption
 	totalBytes := len(decoded)
 
 	// Check if binary
-	if contenttype.IsBinary(contentType, decoded) {
+	if isBinaryContent(contentType, decoded) {
 		return fmt.Sprintf("[binary content, %d bytes]", totalBytes)
 	}
 
 	// If schema mode and JSON content type, return schema as JSON string
-	if opts.SchemaOnly && contenttype.IsJSON(contentType) {
+	if opts.SchemaOnly && isJSONContentType(contentType) {
 		inferred, err := jsonschema.Infer(decoded)
 		if err == nil && inferred != nil {
 			schemaJSON, err := json.Marshal(inferred.Schema)
@@ -88,7 +88,7 @@ func TransformBody(encoded *string, contentType string, opts BodyTransformOption
 	}
 
 	// If compact mode and JSON content type, compact arrays
-	if opts.CompactArrays && contenttype.IsJSON(contentType) {
+	if opts.CompactArrays && isJSONContentType(contentType) {
 		compacted, err := jsoncompact.Compact(decoded, opts.CompactOptions)
 		if err == nil {
 			return string(compacted)
@@ -105,6 +105,48 @@ func TransformBody(encoded *string, contentType string, opts BodyTransformOption
 	}
 
 	return text
+}
+
+// isBinaryContent determines if content should be treated as binary.
+func isBinaryContent(contentType string, data []byte) bool {
+	ct := strings.ToLower(contentType)
+
+	// Text content types
+	if strings.HasPrefix(ct, "text/") ||
+		strings.Contains(ct, "json") ||
+		strings.Contains(ct, "xml") ||
+		strings.Contains(ct, "javascript") ||
+		strings.Contains(ct, "html") ||
+		strings.Contains(ct, "css") ||
+		strings.Contains(ct, "yaml") ||
+		strings.Contains(ct, "form-urlencoded") {
+		return false
+	}
+
+	// Explicit binary types
+	if strings.HasPrefix(ct, "image/") ||
+		strings.HasPrefix(ct, "audio/") ||
+		strings.HasPrefix(ct, "video/") ||
+		strings.Contains(ct, "octet-stream") ||
+		strings.Contains(ct, "gzip") ||
+		strings.Contains(ct, "zip") ||
+		strings.Contains(ct, "pdf") {
+		return true
+	}
+
+	// Unknown content type - check if valid UTF-8
+	if contentType == "" {
+		return !utf8.Valid(data)
+	}
+
+	// Default to text for unknown types if UTF-8 valid
+	return !utf8.Valid(data)
+}
+
+// isJSONContentType checks if content type indicates JSON.
+func isJSONContentType(contentType string) bool {
+	ct := strings.ToLower(contentType)
+	return strings.Contains(ct, "json")
 }
 
 // truncateUTF8 truncates a string at a valid UTF-8 boundary.

@@ -10,7 +10,6 @@ import (
 
 	"github.com/usestring/powhttp-mcp/internal/query"
 	"github.com/usestring/powhttp-mcp/pkg/client"
-	"github.com/usestring/powhttp-mcp/pkg/contenttype"
 	"github.com/usestring/powhttp-mcp/pkg/types"
 )
 
@@ -104,7 +103,7 @@ func ToolQueryBody(d *Deps) func(ctx context.Context, req *sdkmcp.CallToolReques
 		var bodyLabels []string // Labels for error messages (entry_id:target)
 
 		for _, entryID := range entryIDs {
-			entry, err := d.FetchEntry(ctx, sessionID, entryID)
+			entry, err := fetchEntry(ctx, d, sessionID, entryID)
 			if err != nil {
 				output.Entries = append(output.Entries, types.QueryEntryResult{
 					EntryID:    entryID,
@@ -239,7 +238,7 @@ func extractBody(entry *client.SessionEntry, target string) ([]byte, bool, strin
 	}
 
 	// Check for JSON content type
-	if !contenttype.IsJSON(contentType) {
+	if !strings.Contains(strings.ToLower(contentType), "json") {
 		return nil, true, "not JSON content-type: " + contentType
 	}
 
