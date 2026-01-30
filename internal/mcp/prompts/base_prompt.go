@@ -80,6 +80,15 @@ Three tools for understanding body structure, from quick to deep:
 
 **Workflow**: Use ` + "`powhttp_infer_schema`" + ` before ` + "`powhttp_query_body`" + ` to discover which fields exist and their types, then extract specific values with ` + "`powhttp_query_body`" + `.
 
+## GraphQL APIs
+GraphQL APIs funnel all requests through a single POST endpoint (e.g., /graphql), so REST tools like ` + "`powhttp_extract_endpoints`" + ` cluster them as one endpoint. Use the dedicated GraphQL tools instead:
+
+1. **Survey**: ` + "`powhttp_graphql_operations()`" + ` - clusters by operation name/type (the GraphQL equivalent of ` + "`powhttp_extract_endpoints`" + `)
+2. **Inspect**: ` + "`powhttp_graphql_inspect(operation_name=...)`" + ` - parses variables_schema, response_schema, and field_stats
+3. **Errors**: ` + "`powhttp_graphql_errors(operation_name=...)`" + ` - finds partial failures (data + errors) vs full failures (null data)
+
+**Detection signals**: If ` + "`powhttp_extract_endpoints`" + ` shows a high-count POST cluster with ` + "`content_type_hint: \"application/json\"`" + ` and a path like /graphql, switch to ` + "`powhttp_graphql_operations`" + `. The tool auto-detects GraphQL bodies even on custom paths.
+
 ## Tips
 - **Any content type**: ` + "`powhttp_query_body`" + ` auto-detects the expression language from the content-type
 - **Use clusters**: ` + "`powhttp_extract_endpoints`" + ` groups similar requests for batch querying

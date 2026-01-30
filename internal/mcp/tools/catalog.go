@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -114,6 +115,15 @@ func ToolExtractEndpoints(d *Deps) func(ctx context.Context, req *sdkmcp.CallToo
 			hint = fmt.Sprintf("Found %d clusters. Use powhttp_describe_endpoint(cluster_id=...) for schema and examples.", len(resp.Clusters))
 		}
 
+		// Detect likely GraphQL endpoints and add targeted hint
+		for _, c := range resp.Clusters {
+			if c.Method == "POST" && isGraphQLPath(c.PathTemplate) && c.Count >= 5 {
+				hint += fmt.Sprintf(" Detected likely GraphQL endpoint: POST %s%s (%d requests). Use powhttp_graphql_operations(scope={host: %q}) for operation-level analysis.",
+					c.Host, c.PathTemplate, c.Count, c.Host)
+				break
+			}
+		}
+
 		return nil, ExtractEndpointsOutput{
 			Clusters:   resp.Clusters,
 			TotalCount: resp.TotalCount,
@@ -159,4 +169,12 @@ func ToolDescribeEndpoint(d *Deps) func(ctx context.Context, req *sdkmcp.CallToo
 			Hint:        hint,
 		}, nil
 	}
+}
+
+// isGraphQLPath returns true if a path template looks like a GraphQL endpoint.
+// Checks for common GraphQL path patterns: /graphql, /gql, and path segments
+// ending with these names (e.g., /api/v1/graphql, /backend/gql).
+func isGraphQLPath(path string) bool {
+	p := strings.ToLower(path)
+	return strings.Contains(p, "graphql") || strings.Contains(p, "/gql")
 }

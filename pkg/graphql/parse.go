@@ -1,0 +1,298 @@
+package graphql
+
+import (
+	"encoding/json"
+	"errors"
+	"strings"
+	"unicode"
+)
+
+// graphqlBody represents the JSON structure of a GraphQL request body.
+type graphqlBody struct {
+	Query         string `json:"query"`
+	OperationName string `json:"operationName"`
+	Variables     any    `json:"variables"`
+}
+
+// ParseRequestBody parses a GraphQL request body (single or batched).
+// Returns the parsed operations. For non-JSON or empty bodies, returns an error.
+func ParseRequestBody(body []byte) (*ParseResult, error) {
+	body = bytes_trimSpace(body)
+	if len(body) == 0 {
+		return nil, newParseError(ErrEmpty, "graphql: empty body", nil)
+	}
+
+	// Try batched (JSON array) first
+	if body[0] == '[' {
+		var arr []graphqlBody
+		if err := json.Unmarshal(body, &arr); err != nil {
+			return nil, newParseError(nil, "graphql: invalid JSON array", err)
+		}
+		if len(arr) == 0 {
+			return nil, newParseError(ErrEmpty, "graphql: empty batch array", nil)
+		}
+		ops := make([]ParsedOperation, 0, len(arr))
+		for i, item := range arr {
+			op := parseOne(item)
+			op.BatchIndex = i
+			ops = append(ops, op)
+		}
+		return &ParseResult{Operations: ops, IsBatched: true}, nil
+	}
+
+	// Single operation
+	var single graphqlBody
+	if err := json.Unmarshal(body, &single); err != nil {
+		return nil, newParseError(nil, "graphql: invalid JSON object", err)
+	}
+	if single.Query == "" && single.OperationName == "" {
+		return nil, newParseError(ErrNotGraphQL, "graphql: not a GraphQL request body", nil)
+	}
+
+	op := parseOne(single)
+	return &ParseResult{Operations: []ParsedOperation{op}}, nil
+}
+
+// parseOne converts a single graphqlBody into a ParsedOperation.
+func parseOne(b graphqlBody) ParsedOperation {
+	op := ParsedOperation{
+		RawQuery:      b.Query,
+		Variables:     b.Variables,
+		HasVariables:  b.Variables != nil,
+		OperationName: b.OperationName,
+	}
+
+	// Try to parse the query string
+	opType, opName, fields, ok := scanQuery(b.Query)
+	if ok {
+		op.Type = opType
+		op.Name = opName
+		op.Fields = fields
+	} else {
+		op.ParseFailed = b.Query != "" // only mark failed if there was something to parse
+		op.Type = "query"              // default type
+	}
+
+	// Prefer operationName from JSON body if present
+	if b.OperationName != "" {
+		op.Name = b.OperationName
+	}
+
+	// Default unnamed operations to "anonymous"
+	if op.Name == "" {
+		op.Name = "anonymous"
+	}
+
+	return op
+}
+
+// scanQuery extracts the operation type, name, and top-level field names
+// from a GraphQL query string using simple string scanning.
+// Returns (type, name, fields, ok).
+func scanQuery(query string) (string, string, []string, bool) {
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return "", "", nil, false
+	}
+
+	// Determine operation type by leading keyword
+	opType := "query"
+	rest := query
+
+	for _, keyword := range []string{"subscription", "mutation", "query"} {
+		if strings.HasPrefix(strings.ToLower(rest), keyword) {
+			opType = keyword
+			rest = strings.TrimSpace(rest[len(keyword):])
+			break
+		}
+	}
+
+	// If the query starts with '{', it's a shorthand query with no name
+	if strings.HasPrefix(query, "{") {
+		fields := extractTopLevelFields(query)
+		return "query", "", fields, true
+	}
+
+	// Extract operation name (the identifier before '(' or '{')
+	name := ""
+	i := 0
+	// Skip whitespace
+	for i < len(rest) && unicode.IsSpace(rune(rest[i])) {
+		i++
+	}
+	// Read identifier
+	start := i
+	for i < len(rest) && (unicode.IsLetter(rune(rest[i])) || unicode.IsDigit(rune(rest[i])) || rest[i] == '_') {
+		i++
+	}
+	if i > start {
+		name = rest[start:i]
+	}
+
+	// Extract top-level fields from the first selection set
+	fields := extractTopLevelFields(rest)
+
+	return opType, name, fields, true
+}
+
+// extractTopLevelFields finds the first '{...}' block and extracts
+// the top-level field names (identifiers at depth 1).
+func extractTopLevelFields(s string) []string {
+	// Find the first opening brace
+	braceStart := strings.IndexByte(s, '{')
+	if braceStart < 0 {
+		return nil
+	}
+
+	var fields []string
+	seen := make(map[string]bool)
+	depth := 0
+	i := braceStart
+
+	for i < len(s) {
+		ch := s[i]
+		switch ch {
+		case '{':
+			depth++
+			i++
+		case '}':
+			depth--
+			if depth == 0 {
+				return fields
+			}
+			i++
+		default:
+			if depth == 1 && (unicode.IsLetter(rune(ch)) || ch == '_') {
+				// Read identifier
+				start := i
+				for i < len(s) && (unicode.IsLetter(rune(s[i])) || unicode.IsDigit(rune(s[i])) || s[i] == '_') {
+					i++
+				}
+				fieldName := s[start:i]
+				// Skip GraphQL keywords that appear at field level
+				if !isGraphQLKeyword(fieldName) && !seen[fieldName] {
+					fields = append(fields, fieldName)
+					seen[fieldName] = true
+				}
+			} else {
+				i++
+			}
+		}
+	}
+
+	return fields
+}
+
+// isGraphQLKeyword returns true for GraphQL keywords that should not
+// be treated as field names.
+func isGraphQLKeyword(s string) bool {
+	switch strings.ToLower(s) {
+	case "fragment", "on", "true", "false", "null":
+		return true
+	}
+	return false
+}
+
+// bytes_trimSpace trims whitespace from both ends of a byte slice.
+func bytes_trimSpace(b []byte) []byte {
+	start := 0
+	for start < len(b) && b[start] <= ' ' {
+		start++
+	}
+	end := len(b)
+	for end > start && b[end-1] <= ' ' {
+		end--
+	}
+	return b[start:end]
+}
+
+// Sentinel errors for parse failures.
+var (
+	// ErrEmpty indicates the request body was empty or whitespace-only.
+	ErrEmpty = errors.New("graphql: empty body")
+
+	// ErrNotGraphQL indicates the body is valid JSON but does not contain
+	// a GraphQL query or operationName field.
+	ErrNotGraphQL = errors.New("graphql: not a GraphQL request body")
+)
+
+// ParseError wraps a parse failure with the underlying cause.
+// Use errors.Is to check for ErrEmpty or ErrNotGraphQL, and
+// errors.As to extract the ParseError for context.
+type ParseError struct {
+	// Sentinel is the category (ErrEmpty, ErrNotGraphQL, or nil for JSON errors).
+	Sentinel error
+	// Cause is the underlying error (e.g., json.SyntaxError).
+	Cause error
+	// Message provides human-readable context.
+	Message string
+}
+
+func (e *ParseError) Error() string {
+	if e.Cause != nil {
+		return e.Message + ": " + e.Cause.Error()
+	}
+	return e.Message
+}
+
+func (e *ParseError) Unwrap() error {
+	if e.Sentinel != nil {
+		return e.Sentinel
+	}
+	return e.Cause
+}
+
+// Is supports errors.Is matching against sentinel errors.
+func (e *ParseError) Is(target error) bool {
+	return e.Sentinel == target
+}
+
+// IsNotGraphQL returns true if the error indicates the body is not GraphQL.
+// Checks for both ErrNotGraphQL and ErrEmpty using errors.Is.
+func IsNotGraphQL(err error) bool {
+	return errors.Is(err, ErrNotGraphQL) || errors.Is(err, ErrEmpty)
+}
+
+func newParseError(sentinel error, message string, cause error) *ParseError {
+	return &ParseError{
+		Sentinel: sentinel,
+		Cause:    cause,
+		Message:  message,
+	}
+}
+
+// IsGraphQLBody probes whether a JSON body is a GraphQL request by checking
+// for the presence of a "query" field (string) or an array of objects with
+// "query" fields. This is more reliable than path-based detection because
+// GraphQL endpoints can be mounted on any path.
+//
+// Returns true if the body looks like a GraphQL request, false otherwise.
+// Does not fully parse the body — only checks structural signals.
+func IsGraphQLBody(body []byte) bool {
+	body = bytes_trimSpace(body)
+	if len(body) == 0 {
+		return false
+	}
+
+	if body[0] == '[' {
+		// Batched: check first element
+		var arr []json.RawMessage
+		if err := json.Unmarshal(body, &arr); err != nil || len(arr) == 0 {
+			return false
+		}
+		return hasQueryField(arr[0])
+	}
+
+	return hasQueryField(body)
+}
+
+// hasQueryField checks if a JSON object contains a non-empty "query" string field.
+func hasQueryField(data []byte) bool {
+	var obj struct {
+		Query *string `json:"query"`
+	}
+	if err := json.Unmarshal(data, &obj); err != nil {
+		return false
+	}
+	return obj.Query != nil && *obj.Query != ""
+}
