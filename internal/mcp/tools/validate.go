@@ -5,12 +5,12 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"sort"
-	"strings"
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/usestring/powhttp-mcp/internal/schema"
 	"github.com/usestring/powhttp-mcp/pkg/client"
+	"github.com/usestring/powhttp-mcp/pkg/contenttype"
 	"github.com/usestring/powhttp-mcp/pkg/types"
 )
 
@@ -127,7 +127,7 @@ func ToolValidateSchema(d *Deps) func(ctx context.Context, req *sdkmcp.CallToolR
 		}
 
 		for _, entryID := range entryIDs {
-			entry, err := fetchEntry(ctx, d, sessionID, entryID)
+			entry, err := d.FetchEntry(ctx, sessionID, entryID)
 			if err != nil {
 				results = append(results, EntryValidation{
 					EntryID:    entryID,
@@ -199,20 +199,6 @@ func ToolValidateSchema(d *Deps) func(ctx context.Context, req *sdkmcp.CallToolR
 	}
 }
 
-func fetchEntry(ctx context.Context, d *Deps, sessionID, entryID string) (*client.SessionEntry, error) {
-	if cached, ok := d.Cache.Get(entryID); ok {
-		return cached, nil
-	}
-
-	entry, err := d.Client.GetEntry(ctx, sessionID, entryID)
-	if err != nil {
-		return nil, err
-	}
-
-	d.Cache.Put(entryID, entry)
-	return entry, nil
-}
-
 func validateEntryBody(validator *schema.Validator, entry *client.SessionEntry, target string) EntryValidation {
 	result := EntryValidation{
 		Target: target,
@@ -240,7 +226,7 @@ func validateEntryBody(validator *schema.Validator, entry *client.SessionEntry, 
 		return result
 	}
 
-	if !strings.Contains(strings.ToLower(contentType), "json") {
+	if !contenttype.IsJSON(contentType) {
 		result.Skipped = true
 		result.SkipReason = "not JSON content-type: " + contentType
 		return result
