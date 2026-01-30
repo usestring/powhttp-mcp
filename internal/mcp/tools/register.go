@@ -93,18 +93,18 @@ func Register(srv *sdkmcp.Server, d *Deps) {
 	// Tool 15: powhttp_graphql_operations
 	sdkmcp.AddTool(srv, &sdkmcp.Tool{
 		Name:        "powhttp_graphql_operations",
-		Description: "Cluster GraphQL traffic by operation name and type (query/mutation/subscription). Returns {operation_clusters: [{name, type, count, error_count, fields, has_variables, entry_ids}], traffic_summary: {total_requests, unique_ops, query_count, mutation_count, subscription_count, anonymous_count, hosts}, hint}. Auto-detects POST /graphql and /gql entries, with body-probing fallback for custom paths. Use this instead of extract_endpoints when analyzing GraphQL APIs. Use graphql_inspect to drill into specific operations, or graphql_errors to find failures.",
+		Description: "Cluster GraphQL traffic by operation name and type (query/mutation/subscription). Returns operation clusters with counts, error counts, fields, and example entry IDs, plus a traffic summary. Searches all POST entries and validates request bodies, so it works regardless of endpoint path. Filter by operation_type to see only queries, mutations, or subscriptions. Use this INSTEAD OF extract_endpoints when analyzing GraphQL APIs -- extract_endpoints collapses all GraphQL operations into one cluster. Use graphql_inspect to drill into a specific operation, or graphql_errors to find failures.",
 	}, ToolGraphQLOperations(d))
 
 	// Tool 16: powhttp_graphql_inspect
 	sdkmcp.AddTool(srv, &sdkmcp.Tool{
 		Name:        "powhttp_graphql_inspect",
-		Description: "Parse and inspect individual GraphQL operations. Returns {operations: [{name, type, fields, raw_query, variables_schema, response_schema, field_stats}], entries_checked, entries_matched, hint}. Requires entry_ids or operation_name. Use this to understand what an operation sends and receives. Use graphql_errors instead when looking for failures.",
+		Description: "Parse and inspect individual GraphQL operations. Returns operation details with variables_schema, response_schema, and field statistics. Requires entry_ids or operation_name; omitting both returns an error. Use this to understand what an operation sends and receives. Use graphql_errors instead when looking for failures.",
 	}, ToolGraphQLInspect(d))
 
 	// Tool 17: powhttp_graphql_errors
 	sdkmcp.AddTool(srv, &sdkmcp.Tool{
 		Name:        "powhttp_graphql_errors",
-		Description: "Extract and categorize GraphQL errors from responses. Returns {error_groups: [{entry_id, operation_name, errors: [{message, path, extensions}], is_partial, is_full_failure}], summary: {entries_checked, entries_with_errors, total_errors, partial_failures, full_failures}, hint}. Distinguishes partial failures (data + errors) from full failures (null data + errors). Requires entry_ids or operation_name. Use graphql_inspect instead for operation schema details.",
+		Description: "Extract and categorize GraphQL errors from responses. Returns error groups with messages, paths, and extensions, plus a summary distinguishing partial failures (data + errors) from full failures (null data + errors). Requires entry_ids or operation_name; omitting both returns an error. Use graphql_inspect instead for operation schema details.",
 	}, ToolGraphQLErrors(d))
 }

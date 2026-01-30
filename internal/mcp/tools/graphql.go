@@ -32,7 +32,7 @@ type GraphQLOperationsInput struct {
 // GraphQLOperationsScope defines the filtering scope for GraphQL operations.
 type GraphQLOperationsScope struct {
 	Host         string `json:"host,omitempty" jsonschema:"Filter by host"`
-	Path         string `json:"path,omitempty" jsonschema:"Override default path detection (disables body-probing fallback). By default, auto-detects POST requests to paths containing 'graphql' or '/gql', then falls back to probing all POST bodies. Set this to search a custom GraphQL endpoint path."`
+	Path         string `json:"path,omitempty" jsonschema:"Filter by URL path substring. By default, searches all POST requests and validates bodies. Set this to narrow the search to a specific path."`
 	ProcessName  string `json:"process_name,omitempty" jsonschema:"Filter by process name"`
 	PID          int    `json:"pid,omitempty" jsonschema:"Filter by process ID"`
 	TimeWindowMs int64  `json:"time_window_ms,omitempty" jsonschema:"Relative time window (ms)"`
@@ -50,8 +50,9 @@ type GraphQLOperationsOutput struct {
 // GraphQLInspectInput is the input for powhttp_graphql_inspect.
 type GraphQLInspectInput struct {
 	SessionID     string   `json:"session_id,omitempty" jsonschema:"Session ID (default: active)"`
-	EntryIDs      []string `json:"entry_ids,omitempty" jsonschema:"Entry IDs to inspect. Either entry_ids or operation_name is required."`
+	EntryIDs      []string `json:"entry_ids,omitempty" jsonschema:"Entry IDs to inspect. When both entry_ids and operation_name are provided, only the named operation within the given entries is inspected. Either entry_ids or operation_name is required."`
 	OperationName string   `json:"operation_name,omitempty" jsonschema:"GraphQL operation name to find and inspect. Either entry_ids or operation_name is required."`
+	Host          string   `json:"host,omitempty" jsonschema:"Filter search by host (used with operation_name; ignored when entry_ids is provided)"`
 	IncludeQuery  *bool    `json:"include_query,omitempty" jsonschema:"Include raw query string in output (default: true)"`
 	MaxEntries    int      `json:"max_entries,omitempty" jsonschema:"Max entries to inspect (default: 20, max: 100)"`
 }
@@ -67,8 +68,9 @@ type GraphQLInspectOutput struct {
 // GraphQLErrorsInput is the input for powhttp_graphql_errors.
 type GraphQLErrorsInput struct {
 	SessionID     string   `json:"session_id,omitempty" jsonschema:"Session ID (default: active)"`
-	EntryIDs      []string `json:"entry_ids,omitempty" jsonschema:"Entry IDs to check. Either entry_ids or operation_name is required."`
+	EntryIDs      []string `json:"entry_ids,omitempty" jsonschema:"Entry IDs to check. When both entry_ids and operation_name are provided, only the named operation within the given entries is checked. Either entry_ids or operation_name is required."`
 	OperationName string   `json:"operation_name,omitempty" jsonschema:"GraphQL operation name to find and check. Either entry_ids or operation_name is required."`
+	Host          string   `json:"host,omitempty" jsonschema:"Filter search by host (used with operation_name; ignored when entry_ids is provided)"`
 	ErrorsOnly    *bool    `json:"errors_only,omitempty" jsonschema:"Return only entries with GraphQL errors (default: true). Set to false to include all entries."`
 	MaxEntries    int      `json:"max_entries,omitempty" jsonschema:"Max entries to check (default: 20, max: 100)"`
 }
@@ -105,20 +107,17 @@ func ToolGraphQLOperations(d *Deps) func(ctx context.Context, req *sdkmcp.CallTo
 			limit = 50
 		}
 
-		// Build search filters for GraphQL traffic.
-		// Strategy: first try path-based detection (fast), then fall back to
-		// body-based probing (catches custom paths like /api, /v1/data, etc.).
+		// Search all POST requests and let parseGraphQLEntry filter by body.
 		searchFilters := &types.SearchFilters{
 			Method: "POST",
 		}
 
-		explicitPath := ""
 		if input.Scope != nil {
 			if input.Scope.Host != "" {
 				searchFilters.Host = input.Scope.Host
 			}
 			if input.Scope.Path != "" {
-				explicitPath = input.Scope.Path
+				searchFilters.PathContains = input.Scope.Path
 			}
 			if input.Scope.ProcessName != "" {
 				searchFilters.ProcessName = input.Scope.ProcessName
@@ -137,13 +136,6 @@ func ToolGraphQLOperations(d *Deps) func(ctx context.Context, req *sdkmcp.CallTo
 			}
 		}
 
-		// Phase 1: path-based search (or explicit path)
-		if explicitPath != "" {
-			searchFilters.PathContains = explicitPath
-		} else {
-			searchFilters.PathContains = "graphql"
-		}
-
 		searchResp, err := d.Search.Search(ctx, &types.SearchRequest{
 			SessionID: sessionID,
 			Filters:   searchFilters,
@@ -153,50 +145,13 @@ func ToolGraphQLOperations(d *Deps) func(ctx context.Context, req *sdkmcp.CallTo
 			return nil, GraphQLOperationsOutput{}, WrapPowHTTPError(err)
 		}
 
-		// Phase 1b: also try /gql path if no explicit path and "graphql" found nothing
-		if len(searchResp.Results) == 0 && explicitPath == "" {
-			gqlFilters := *searchFilters
-			gqlFilters.PathContains = "gql"
-			gqlResp, err := d.Search.Search(ctx, &types.SearchRequest{
-				SessionID: sessionID,
-				Filters:   &gqlFilters,
-				Limit:     graphqlSearchLimit,
-			})
-			if err == nil && len(gqlResp.Results) > 0 {
-				searchResp = gqlResp
-			}
-		}
-
-		// Phase 2: if path-based search found nothing and no explicit path,
-		// broaden to all POST requests and probe bodies for GraphQL structure.
-		usedBodyProbing := false
-		if len(searchResp.Results) == 0 && explicitPath == "" {
-			broadFilters := *searchFilters
-			broadFilters.PathContains = ""
-			broadResp, err := d.Search.Search(ctx, &types.SearchRequest{
-				SessionID: sessionID,
-				Filters:   &broadFilters,
-				Limit:     graphqlSearchLimit,
-			})
-			if err == nil && len(broadResp.Results) > 0 {
-				searchResp = broadResp
-				usedBodyProbing = true
-			}
-		}
-
 		if len(searchResp.Results) == 0 {
-			hint := "No GraphQL traffic found."
-			if explicitPath != "" {
-				hint += fmt.Sprintf(" No POST requests matched path %q. Try powhttp_search_entries(filters={method: \"POST\"}) to see what POST traffic exists, or remove the path override to use auto-detection.", explicitPath)
-			} else {
-				hint += " Searched POST requests with path containing \"graphql\" or \"gql\", then probed all POST bodies. No GraphQL request bodies (JSON with a \"query\" field) were found. Try powhttp_extract_endpoints() to see what endpoints exist, or powhttp_search_entries(filters={method: \"POST\"}) to find POST traffic."
-			}
-			return nil, GraphQLOperationsOutput{Hint: hint}, nil
+			return nil, GraphQLOperationsOutput{
+				Hint: "No POST requests found. Try powhttp_extract_endpoints() to see what endpoints exist, or powhttp_search_entries(filters={method: \"POST\"}) to find POST traffic.",
+			}, nil
 		}
 
-		// Parse GraphQL bodies from discovered entries.
-		// When body probing is active, validate each body with IsGraphQLBody
-		// before attempting full parse.
+		// Parse GraphQL bodies from discovered entries using the shared cache.
 		type parsedEntry struct {
 			entryID string
 			result  *graphql.ParseResult
@@ -209,40 +164,24 @@ func ToolGraphQLOperations(d *Deps) func(ctx context.Context, req *sdkmcp.CallTo
 
 		for _, sr := range searchResp.Results {
 			entryID := sr.Summary.EntryID
-			entry, err := d.FetchEntry(ctx, sessionID, entryID)
-			if err != nil {
-				continue
-			}
 
-			body, ct, err := d.DecodeBody(entry, "request")
-			if err != nil || body == nil {
-				continue
-			}
-
-			if !contenttype.IsJSON(ct) {
-				continue
-			}
-
-			// When using broad search, quick-check the body structure first
-			if usedBodyProbing && !graphql.IsGraphQLBody(body) {
-				continue
-			}
-
-			pr, err := graphql.ParseRequestBody(body)
-			if err != nil {
+			pr, ok := parseGraphQLEntry(ctx, d, sessionID, entryID)
+			if !ok {
 				continue
 			}
 
 			// Check for GraphQL errors in response
 			hasErr := false
-			respBody, respCT, respErr := d.DecodeBody(entry, "response")
-			if respErr == nil && respBody != nil && contenttype.IsJSON(respCT) {
-				hasErr = responseHasGraphQLErrors(respBody)
-			}
+			entry, err := d.FetchEntry(ctx, sessionID, entryID) // already cached
+			if err == nil {
+				respBody, respCT, respErr := d.DecodeBody(entry, "response")
+				if respErr == nil && respBody != nil && contenttype.IsJSON(respCT) {
+					hasErr = responseHasGraphQLErrors(respBody)
+				}
 
-			// Extract host
-			if u, err := url.Parse(entry.URL); err == nil {
-				hosts[u.Host] = true
+				if u, err := url.Parse(entry.URL); err == nil {
+					hosts[u.Host] = true
+				}
 			}
 
 			parsed = append(parsed, parsedEntry{
@@ -379,9 +318,16 @@ func ToolGraphQLOperations(d *Deps) func(ctx context.Context, req *sdkmcp.CallTo
 				parts = append(parts, fmt.Sprintf("%d subscriptions", summary.SubscriptionCount))
 			}
 
-			firstOp := clusters[0].Name
+			// Prefer an operation with errors for the hint (more actionable for debugging)
+			hintOp := clusters[0].Name
+			for _, c := range clusters {
+				if c.ErrorCount > 0 {
+					hintOp = c.Name
+					break
+				}
+			}
 			hint = fmt.Sprintf("Found %d operations (%s). Use powhttp_graphql_inspect(operation_name=%q) for schema details, or powhttp_graphql_errors() to find failures.",
-				summary.UniqueOps, strings.Join(parts, ", "), firstOp)
+				summary.UniqueOps, strings.Join(parts, ", "), hintOp)
 		}
 
 		return nil, GraphQLOperationsOutput{
@@ -422,7 +368,7 @@ func ToolGraphQLInspect(d *Deps) func(ctx context.Context, req *sdkmcp.CallToolR
 		}
 
 		// Resolve entry IDs
-		entryIDs, err := resolveGraphQLEntryIDs(ctx, d, sessionID, input.EntryIDs, input.OperationName, maxEntries)
+		entryIDs, err := resolveGraphQLEntryIDs(ctx, d, sessionID, input.EntryIDs, input.OperationName, input.Host, maxEntries)
 		if err != nil {
 			return nil, GraphQLInspectOutput{}, err
 		}
@@ -444,13 +390,10 @@ func ToolGraphQLInspect(d *Deps) func(ctx context.Context, req *sdkmcp.CallToolR
 			}
 			entriesChecked++
 
-			reqBody, reqCT, err := d.DecodeBody(entry, "request")
-			if err != nil || reqBody == nil || !contenttype.IsJSON(reqCT) {
-				continue
-			}
-
-			pr, err := graphql.ParseRequestBody(reqBody)
-			if err != nil {
+			// Use the shared parse cache to avoid re-decoding and re-parsing
+			// the request body (resolveGraphQLEntryIDs already populated it).
+			pr, ok := parseGraphQLEntry(ctx, d, sessionID, entryID)
+			if !ok {
 				continue
 			}
 
@@ -545,7 +488,7 @@ func ToolGraphQLErrors(d *Deps) func(ctx context.Context, req *sdkmcp.CallToolRe
 		}
 
 		// Resolve entry IDs
-		entryIDs, err := resolveGraphQLEntryIDs(ctx, d, sessionID, input.EntryIDs, input.OperationName, maxEntries)
+		entryIDs, err := resolveGraphQLEntryIDs(ctx, d, sessionID, input.EntryIDs, input.OperationName, input.Host, maxEntries)
 		if err != nil {
 			return nil, GraphQLErrorsOutput{}, err
 		}
@@ -566,13 +509,11 @@ func ToolGraphQLErrors(d *Deps) func(ctx context.Context, req *sdkmcp.CallToolRe
 			}
 			summary.EntriesChecked++
 
-			// Get operation name from request
+			// Get operation name from request using the shared parse cache
+			// to avoid re-decoding and re-parsing the request body.
 			opName := ""
-			reqBody, reqCT, reqErr := d.DecodeBody(entry, "request")
-			if reqErr == nil && reqBody != nil && contenttype.IsJSON(reqCT) {
-				if pr, err := graphql.ParseRequestBody(reqBody); err == nil && len(pr.Operations) > 0 {
-					opName = pr.Operations[0].Name
-				}
+			if pr, ok := parseGraphQLEntry(ctx, d, sessionID, entryID); ok && len(pr.Operations) > 0 {
+				opName = pr.Operations[0].Name
 			}
 
 			// Filter by operation name if specified
@@ -603,6 +544,11 @@ func ToolGraphQLErrors(d *Deps) func(ctx context.Context, req *sdkmcp.CallToolRe
 				summary.EntriesWithErrors++
 				summary.TotalErrors += len(respData.Errors)
 
+				// Per the GraphQL spec: if data is null or absent, it's a full failure
+				// (execution didn't start or was completely aborted). If data is present
+				// (even empty object), it's a partial failure (some resolvers succeeded).
+				// Note: both {"data": null} and {"errors": [...]} (no data key) unmarshal
+				// Data as nil, which is correct -- both are full failures.
 				isPartial := respData.Data != nil
 				isFullFailure := respData.Data == nil
 
@@ -632,30 +578,34 @@ func ToolGraphQLErrors(d *Deps) func(ctx context.Context, req *sdkmcp.CallToolRe
 		// Build hint
 		var hint string
 		if summary.EntriesWithErrors > 0 {
-			// Collect unique operation names and entry IDs from error groups
-			opNames := make(map[string]bool)
+			// Count errors per operation and find the most-errored for the hint
+			opErrorCount := make(map[string]int)
 			var sampleErrorEntryID string
 			for _, eg := range errorGroups {
 				if eg.OperationName != "" && len(eg.Errors) > 0 {
-					opNames[eg.OperationName] = true
+					opErrorCount[eg.OperationName] += len(eg.Errors)
 					if sampleErrorEntryID == "" {
 						sampleErrorEntryID = eg.EntryID
 					}
 				}
 			}
-			if len(opNames) > 0 {
-				names := make([]string, 0, len(opNames))
-				for n := range opNames {
-					names = append(names, n)
+			if len(opErrorCount) > 0 {
+				// Pick the operation with the most errors (alphabetical tiebreaker for determinism)
+				bestOp := ""
+				bestCount := 0
+				for name, count := range opErrorCount {
+					if count > bestCount || (count == bestCount && (bestOp == "" || name < bestOp)) {
+						bestOp = name
+						bestCount = count
+					}
 				}
-				sort.Strings(names)
-				hint = fmt.Sprintf("Use powhttp_graphql_inspect(operation_name=%q) to see the operation schema and variables.", names[0])
+				hint = fmt.Sprintf("Use powhttp_graphql_inspect(operation_name=%q) to see the operation schema and variables.", bestOp)
 				if sampleErrorEntryID != "" {
 					hint += fmt.Sprintf(" Use powhttp_get_entry(entry_id=%q, include_headers=true) for full request/response details.", sampleErrorEntryID)
 				}
 			}
 		} else if summary.EntriesChecked > 0 {
-			hint = "No GraphQL errors found in the checked entries. Use powhttp_graphql_inspect() to examine operation schemas instead."
+			hint = "No GraphQL errors found in the checked entries. Use powhttp_graphql_inspect() to examine operation schemas, or powhttp_graphql_operations() to survey all operations."
 		}
 
 		return nil, GraphQLErrorsOutput{
@@ -674,11 +624,56 @@ func ToolGraphQLErrors(d *Deps) func(ctx context.Context, req *sdkmcp.CallToolRe
 // Larger than maxEntries to ensure we find target operations even in busy APIs.
 const graphqlSearchLimit = 500
 
+// graphqlParseCacheEntry stores a cached GraphQL parse result for an entry.
+type graphqlParseCacheEntry struct {
+	result *graphql.ParseResult // nil if not a valid GraphQL body
+	ok     bool                 // true if this entry is GraphQL
+}
+
+// parseGraphQLEntry fetches, decodes, and parses a GraphQL request body,
+// caching the result on Deps so subsequent calls for the same entry are free.
+// Returns (parseResult, true) for GraphQL entries, (nil, false) otherwise.
+func parseGraphQLEntry(ctx context.Context, d *Deps, sessionID, entryID string) (*graphql.ParseResult, bool) {
+	if v, ok := d.GraphQLParseCache.Load(entryID); ok {
+		e := v.(*graphqlParseCacheEntry)
+		return e.result, e.ok
+	}
+
+	notGQL := &graphqlParseCacheEntry{}
+
+	entry, err := d.FetchEntry(ctx, sessionID, entryID)
+	if err != nil {
+		d.GraphQLParseCache.Store(entryID, notGQL)
+		return nil, false
+	}
+
+	body, ct, err := d.DecodeBody(entry, "request")
+	if err != nil || body == nil || !contenttype.IsJSON(ct) {
+		d.GraphQLParseCache.Store(entryID, notGQL)
+		return nil, false
+	}
+
+	if !graphql.IsGraphQLBody(body) {
+		d.GraphQLParseCache.Store(entryID, notGQL)
+		return nil, false
+	}
+
+	pr, err := graphql.ParseRequestBody(body)
+	if err != nil {
+		d.GraphQLParseCache.Store(entryID, notGQL)
+		return nil, false
+	}
+
+	cached := &graphqlParseCacheEntry{result: pr, ok: true}
+	d.GraphQLParseCache.Store(entryID, cached)
+	return pr, true
+}
+
 // resolveGraphQLEntryIDs returns entry IDs either from the provided list or by
 // searching for GraphQL entries. When operationName is provided, filters results
 // to only entries containing that operation (fetches and parses bodies to verify).
-// Uses path-based detection first, then falls back to body probing.
-func resolveGraphQLEntryIDs(ctx context.Context, d *Deps, sessionID string, entryIDs []string, operationName string, maxEntries int) ([]string, error) {
+// The host parameter scopes the search to a specific host (empty = all hosts).
+func resolveGraphQLEntryIDs(ctx context.Context, d *Deps, sessionID string, entryIDs []string, operationName string, host string, maxEntries int) ([]string, error) {
 	if len(entryIDs) > 0 {
 		if len(entryIDs) > maxEntries {
 			entryIDs = entryIDs[:maxEntries]
@@ -686,82 +681,34 @@ func resolveGraphQLEntryIDs(ctx context.Context, d *Deps, sessionID string, entr
 		return entryIDs, nil
 	}
 
-	// Use a larger internal search limit to find the target operation
-	// even in busy APIs where it may not appear in the first few results.
-	searchLimit := graphqlSearchLimit
-
-	// Phase 1: try path-based search ("graphql")
+	// Search all POST requests; parseGraphQLEntry handles body validation.
 	searchResp, err := d.Search.Search(ctx, &types.SearchRequest{
 		SessionID: sessionID,
 		Filters: &types.SearchFilters{
-			Method:       "POST",
-			PathContains: "graphql",
+			Method: "POST",
+			Host:   host,
 		},
-		Limit: searchLimit,
+		Limit: graphqlSearchLimit,
 	})
 	if err != nil {
 		return nil, WrapPowHTTPError(err)
 	}
 
-	// Phase 1b: also try "gql" path
-	if len(searchResp.Results) == 0 {
-		gqlResp, err := d.Search.Search(ctx, &types.SearchRequest{
-			SessionID: sessionID,
-			Filters: &types.SearchFilters{
-				Method:       "POST",
-				PathContains: "gql",
-			},
-			Limit: searchLimit,
-		})
-		if err != nil {
-			return nil, WrapPowHTTPError(err)
-		}
-		if len(gqlResp.Results) > 0 {
-			searchResp = gqlResp
-		}
-	}
-
-	// Phase 2: if path-based found nothing, broaden to all POST
-	if len(searchResp.Results) == 0 {
-		broadResp, err := d.Search.Search(ctx, &types.SearchRequest{
-			SessionID: sessionID,
-			Filters: &types.SearchFilters{
-				Method: "POST",
-			},
-			Limit: searchLimit,
-		})
-		if err != nil {
-			return nil, WrapPowHTTPError(err)
-		}
-		searchResp = broadResp
-	}
-
 	// Filter results: validate GraphQL bodies and optionally match operation name.
+	// Uses the shared parse cache so repeated calls for the same entries are free.
 	ids := make([]string, 0, maxEntries)
 	for _, r := range searchResp.Results {
 		if len(ids) >= maxEntries {
 			break
 		}
 
-		entry, err := d.FetchEntry(ctx, sessionID, r.Summary.EntryID)
-		if err != nil {
-			continue
-		}
-		body, ct, err := d.DecodeBody(entry, "request")
-		if err != nil || body == nil || !contenttype.IsJSON(ct) {
+		pr, ok := parseGraphQLEntry(ctx, d, sessionID, r.Summary.EntryID)
+		if !ok {
 			continue
 		}
 
-		if !graphql.IsGraphQLBody(body) {
-			continue
-		}
-
-		// When operation name is specified, parse and filter
+		// When operation name is specified, filter by parsed operations
 		if operationName != "" {
-			pr, err := graphql.ParseRequestBody(body)
-			if err != nil {
-				continue
-			}
 			found := false
 			for _, op := range pr.Operations {
 				if op.Name == operationName {
