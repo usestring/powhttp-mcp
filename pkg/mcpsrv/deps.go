@@ -12,7 +12,6 @@ import (
 	"github.com/usestring/powhttp-mcp/internal/indexer"
 	"github.com/usestring/powhttp-mcp/internal/search"
 	"github.com/usestring/powhttp-mcp/pkg/client"
-	"github.com/usestring/powhttp-mcp/pkg/textquery"
 )
 
 // Deps contains all dependencies available to custom tools.
@@ -29,7 +28,6 @@ type Deps struct {
 	Describe     *catalog.DescribeEngine
 	ClusterStore *catalog.ClusterStore
 	Flow         *flow.FlowEngine
-	TextQuery    *textquery.Engine
 }
 
 // FetchEntry retrieves an entry by ID, checking the cache first.
