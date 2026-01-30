@@ -80,12 +80,16 @@ func (c *ClusterEngine) Extract(ctx context.Context, req *types.ExtractRequest) 
 		builder, exists := clusterMap[key]
 		if !exists {
 			builder = &clusterBuilder{
-				key:      key,
-				entryIDs: make([]string, 0),
+				key:          key,
+				entryIDs:     make([]string, 0),
+				contentTypes: make(map[string]int),
 			}
 			clusterMap[key] = builder
 		}
 		builder.entryIDs = append(builder.entryIDs, meta.EntryID)
+		if meta.RespContentType != "" {
+			builder.contentTypes[meta.RespContentType]++
+		}
 	}
 
 	// Convert to clusters, respecting MaxClusters
@@ -124,14 +128,29 @@ func (c *ClusterEngine) Extract(ctx context.Context, req *types.ExtractRequest) 
 		clusterID := computeClusterID(b.key)
 		examples := selectExamples(b.entryIDs, opts.ExamplesPerCluster)
 
-		clusters = append(clusters, types.Cluster{
+		cluster := types.Cluster{
 			ID:              clusterID,
 			Host:            b.key.Host,
 			Method:          b.key.Method,
 			PathTemplate:    b.key.PathTemplate,
 			Count:           len(b.entryIDs),
 			ExampleEntryIDs: examples,
-		})
+		}
+
+		// Compute content type hint: most common response content type
+		if len(b.contentTypes) > 0 {
+			var topCT string
+			var topCount int
+			for ct, count := range b.contentTypes {
+				if count > topCount {
+					topCT = ct
+					topCount = count
+				}
+			}
+			cluster.ContentTypeHint = topCT
+		}
+
+		clusters = append(clusters, cluster)
 
 		fullEntryIDs[clusterID] = b.entryIDs
 	}
@@ -154,8 +173,9 @@ func (c *ClusterEngine) Extract(ctx context.Context, req *types.ExtractRequest) 
 
 // clusterBuilder accumulates entries for a single cluster during extraction.
 type clusterBuilder struct {
-	key      types.ClusterKey
-	entryIDs []string
+	key          types.ClusterKey
+	entryIDs     []string
+	contentTypes map[string]int
 }
 
 // applyOptionsDefaults applies default values to ClusterOptions.

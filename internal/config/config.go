@@ -32,6 +32,8 @@ type Config struct {
 	H2MaxEventsDefault   int           // H2_MAX_EVENTS_DEFAULT, default 200
 	EntryCacheMaxItems   int           // ENTRY_CACHE_MAX_ITEMS, default 512
 	ResourceMaxBodyBytes int           // RESOURCE_MAX_BODY_BYTES, default 65536 (64KB)
+	IndexBody            bool          // INDEX_BODY, default false
+	IndexBodyMaxBytes    int           // INDEX_BODY_MAX_BYTES, default 65536
 
 	// Compaction defaults (for AI-optimized responses)
 	CompactMaxArrayItems int // COMPACT_MAX_ARRAY_ITEMS
@@ -69,6 +71,8 @@ func Load() *Config {
 		H2MaxEventsDefault:   getEnvInt("H2_MAX_EVENTS_DEFAULT", 200),
 		EntryCacheMaxItems:   getEnvInt("ENTRY_CACHE_MAX_ITEMS", 512),
 		ResourceMaxBodyBytes: getEnvInt("RESOURCE_MAX_BODY_BYTES", 65536),
+		IndexBody:            getEnvBool("INDEX_BODY", false),
+		IndexBodyMaxBytes:    getEnvInt("INDEX_BODY_MAX_BYTES", 65536),
 
 		// Compaction defaults (from jsoncompact package)
 		CompactMaxArrayItems: getEnvInt("COMPACT_MAX_ARRAY_ITEMS", jsoncompact.DefaultMaxArrayItems),

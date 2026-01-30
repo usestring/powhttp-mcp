@@ -22,12 +22,22 @@ type GetEntryInput struct {
 
 // GetEntryOutput is the output for powhttp_get_entry.
 type GetEntryOutput struct {
-	Summary    *types.EntrySummary `json:"summary"`
-	Entry      *DisplayEntry       `json:"entry,omitempty"`
-	Resource   *types.ResourceRef  `json:"resource,omitempty"`
-	Truncated  bool                `json:"truncated,omitempty"`
-	Truncation *Truncation         `json:"truncation,omitempty"`
-	Hint       string              `json:"hint,omitempty"`
+	Summary       *types.EntrySummary `json:"summary"`
+	Entry         *DisplayEntry       `json:"entry,omitempty"`
+	AvailableData *AvailableData      `json:"available_data,omitempty"`
+	Resource      *types.ResourceRef  `json:"resource,omitempty"`
+	Truncated     bool                `json:"truncated,omitempty"`
+	Truncation    *Truncation         `json:"truncation,omitempty"`
+	Hint          string              `json:"hint,omitempty"`
+}
+
+// AvailableData reports what data was included in the response.
+type AvailableData struct {
+	HeadersIncluded bool   `json:"headers_included"`
+	BodyMode        string `json:"body_mode"`
+	RespBodyBytes   int    `json:"resp_body_bytes,omitempty"`
+	RespContentType string `json:"resp_content_type,omitempty"`
+	ReqBodyBytes    int    `json:"req_body_bytes,omitempty"`
 }
 
 // Truncation describes what was truncated.
@@ -175,9 +185,21 @@ func ToolGetEntry(d *Deps) func(ctx context.Context, req *sdkmcp.CallToolRequest
 			}
 		}
 
+		// Build available data hint
+		availableData := &AvailableData{
+			HeadersIncluded: input.IncludeHeaders,
+			BodyMode:        bodyMode,
+		}
+		if summary != nil {
+			availableData.RespBodyBytes = summary.Sizes.RespBodyBytes
+			availableData.RespContentType = summary.Sizes.RespContentType
+			availableData.ReqBodyBytes = summary.Sizes.ReqBodyBytes
+		}
+
 		output := GetEntryOutput{
-			Summary: summary,
-			Entry:   displayEntry,
+			Summary:       summary,
+			Entry:         displayEntry,
+			AvailableData: availableData,
 			Resource: &types.ResourceRef{
 				URI:  resourceURI,
 				MIME: MimeJSON,

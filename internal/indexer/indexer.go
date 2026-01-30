@@ -1,6 +1,7 @@
 package indexer
 
 import (
+	"encoding/base64"
 	"sync"
 	"time"
 
@@ -41,6 +42,8 @@ type Indexer struct {
 	idxJA3           map[string]*roaring.Bitmap
 	idxJA4           map[string]*roaring.Bitmap
 	idxToken         map[string]*roaring.Bitmap
+	idxHeaderToken   map[string]*roaring.Bitmap
+	idxBodyToken     map[string]*roaring.Bitmap
 
 	// Per-session refresh state
 	sessions map[string]*sessionState
@@ -69,6 +72,8 @@ func New(c *client.Client, cache *cache.EntryCache, cfg *config.Config) *Indexer
 		idxJA3:           make(map[string]*roaring.Bitmap),
 		idxJA4:           make(map[string]*roaring.Bitmap),
 		idxToken:         make(map[string]*roaring.Bitmap),
+		idxHeaderToken:   make(map[string]*roaring.Bitmap),
+		idxBodyToken:     make(map[string]*roaring.Bitmap),
 		sessions:         make(map[string]*sessionState),
 		client:           c,
 		cache:            cache,
@@ -166,12 +171,56 @@ func (idx *Indexer) Index(entry *client.SessionEntry) uint32 {
 		idx.addToBitmap(idx.idxToken, token, docID)
 	}
 
+	// Index header tokens (full header field: "name: value")
+	headerTokens := TokenizeHeaders(meta.HeaderValues)
+	for _, token := range headerTokens {
+		idx.addToBitmap(idx.idxHeaderToken, token, docID)
+	}
+
+	// Index body tokens (when enabled via config)
+	if idx.config != nil && idx.config.IndexBody {
+		idx.indexBodyTokens(entry, meta, docID)
+	}
+
 	// Cache the full entry
 	if idx.cache != nil {
 		idx.cache.Put(entry.ID, entry)
 	}
 
 	return docID
+}
+
+// indexBodyTokens decodes and tokenizes request and response bodies.
+func (idx *Indexer) indexBodyTokens(entry *client.SessionEntry, meta *EntryMeta, docID uint32) {
+	maxBytes := 65536
+	if idx.config.IndexBodyMaxBytes > 0 {
+		maxBytes = idx.config.IndexBodyMaxBytes
+	}
+
+	// Tokenize request body
+	if entry.Request.Body != nil && *entry.Request.Body != "" {
+		reqContentType := ""
+		for _, pair := range entry.Request.Headers {
+			if len(pair) >= 2 && pair[0] == "content-type" {
+				reqContentType = pair[1]
+				break
+			}
+		}
+		if bodyBytes, err := base64.StdEncoding.DecodeString(*entry.Request.Body); err == nil {
+			for _, token := range TokenizeBody(reqContentType, bodyBytes, maxBytes) {
+				idx.addToBitmap(idx.idxBodyToken, token, docID)
+			}
+		}
+	}
+
+	// Tokenize response body
+	if entry.Response != nil && entry.Response.Body != nil && *entry.Response.Body != "" {
+		if bodyBytes, err := base64.StdEncoding.DecodeString(*entry.Response.Body); err == nil {
+			for _, token := range TokenizeBody(meta.RespContentType, bodyBytes, maxBytes) {
+				idx.addToBitmap(idx.idxBodyToken, token, docID)
+			}
+		}
+	}
 }
 
 // GetMeta retrieves metadata by docID.
@@ -304,11 +353,30 @@ func (idx *Indexer) GetBitmapForJA4(ja4 string) *roaring.Bitmap {
 	return idx.idxJA4[ja4]
 }
 
-// GetBitmapForToken returns the bitmap for a specific token.
+// GetBitmapForToken returns the bitmap for a specific URL token.
 func (idx *Indexer) GetBitmapForToken(token string) *roaring.Bitmap {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
 	return idx.idxToken[token]
+}
+
+// GetBitmapForHeaderToken returns the bitmap for a specific header token.
+func (idx *Indexer) GetBitmapForHeaderToken(token string) *roaring.Bitmap {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+	return idx.idxHeaderToken[token]
+}
+
+// GetBitmapForBodyToken returns the bitmap for a specific body token.
+func (idx *Indexer) GetBitmapForBodyToken(token string) *roaring.Bitmap {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+	return idx.idxBodyToken[token]
+}
+
+// BodyIndexEnabled returns whether body indexing is enabled.
+func (idx *Indexer) BodyIndexEnabled() bool {
+	return idx.config != nil && idx.config.IndexBody
 }
 
 // addToBitmap adds a docID to a string-keyed bitmap index.

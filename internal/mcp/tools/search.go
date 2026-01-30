@@ -12,7 +12,7 @@ import (
 // SearchEntriesInput is the input for powhttp_search_entries.
 type SearchEntriesInput struct {
 	SessionID      string                `json:"session_id,omitempty" jsonschema:"Session ID (default: active)"`
-	Query          string                `json:"query,omitempty" jsonschema:"Free text search query"`
+	Query          string                `json:"query,omitempty" jsonschema:"Free text search across URLs, query params, headers, and body content. Tokens are ANDed: all terms must match somewhere. Use for broad discovery."`
 	Filters        *SearchEntriesFilters `json:"filters,omitempty" jsonschema:"Structured filters"`
 	Limit          int                   `json:"limit,omitempty" jsonschema:"Max results (default: 10, max: 100)"`
 	Offset         int                   `json:"offset,omitempty" jsonschema:"Pagination offset"`
@@ -29,7 +29,9 @@ type SearchEntriesFilters struct {
 	HTTPVersion     string `json:"http_version,omitempty" jsonschema:"HTTP version"`
 	ProcessName     string `json:"process_name,omitempty" jsonschema:"Process name"`
 	PID             int    `json:"pid,omitempty" jsonschema:"Process ID"`
-	HeaderName      string `json:"header_name,omitempty" jsonschema:"Has header name"`
+	HeaderName      string `json:"header_name,omitempty" jsonschema:"Filter by header presence (name only, e.g., authorization)"`
+	HeaderContains  string `json:"header_contains,omitempty" jsonschema:"Substring match on header fields (searches name and value, e.g., 'bearer' or 'content-type: json')"`
+	BodyContains    string `json:"body_contains,omitempty" jsonschema:"Substring match on decoded request/response body text. Searches cached entries only."`
 	TLSConnectionID string `json:"tls_connection_id,omitempty" jsonschema:"TLS connection ID"`
 	JA3             string `json:"ja3,omitempty" jsonschema:"JA3 fingerprint hash"`
 	JA4             string `json:"ja4,omitempty" jsonschema:"JA4 fingerprint hash"`
@@ -40,10 +42,11 @@ type SearchEntriesFilters struct {
 
 // SearchEntriesOutput is the output for powhttp_search_entries.
 type SearchEntriesOutput struct {
-	Results    []types.SearchResult `json:"results"`
-	TotalHint  int                  `json:"total_hint,omitempty"`
-	SyncedAtMs int64                `json:"synced_at_ms"`
-	Hint       string               `json:"hint,omitempty"`
+	Results       []types.SearchResult `json:"results"`
+	TotalHint     int                  `json:"total_hint,omitempty"`
+	SyncedAtMs    int64                `json:"synced_at_ms"`
+	SearchedScope *types.SearchScope   `json:"searched_scope,omitempty"`
+	Hint          string               `json:"hint,omitempty"`
 }
 
 // ToolSearchEntries searches HTTP entries.
@@ -77,6 +80,8 @@ func ToolSearchEntries(d *Deps) func(ctx context.Context, req *sdkmcp.CallToolRe
 				ProcessName:     input.Filters.ProcessName,
 				PID:             input.Filters.PID,
 				HeaderName:      input.Filters.HeaderName,
+				HeaderContains:  input.Filters.HeaderContains,
+				BodyContains:    input.Filters.BodyContains,
 				TLSConnectionID: input.Filters.TLSConnectionID,
 				JA3:             input.Filters.JA3,
 				JA4:             input.Filters.JA4,
@@ -121,10 +126,11 @@ func ToolSearchEntries(d *Deps) func(ctx context.Context, req *sdkmcp.CallToolRe
 		}
 
 		return nil, SearchEntriesOutput{
-			Results:    resp.Results,
-			TotalHint:  resp.TotalHint,
-			SyncedAtMs: resp.SyncedAtMs,
-			Hint:       hint,
+			Results:       resp.Results,
+			TotalHint:     resp.TotalHint,
+			SyncedAtMs:    resp.SyncedAtMs,
+			SearchedScope: resp.Scope,
+			Hint:          hint,
 		}, nil
 	}
 }

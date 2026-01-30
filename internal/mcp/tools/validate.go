@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"sort"
 	"strings"
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -28,7 +29,14 @@ type ValidateSchemaInput struct {
 type ValidateSchemaOutput struct {
 	Summary      ValidationSummary `json:"summary"`
 	Results      []EntryValidation `json:"results"`
+	CommonErrors []CommonError     `json:"common_errors,omitempty"`
 	ParsedSchema json.RawMessage   `json:"parsed_schema,omitempty"`
+}
+
+// CommonError represents a frequently occurring validation error.
+type CommonError struct {
+	Error     string `json:"error"`
+	Frequency int    `json:"frequency"`
 }
 
 // ValidationSummary summarizes the validation results.
@@ -163,9 +171,28 @@ func ToolValidateSchema(d *Deps) func(ctx context.Context, req *sdkmcp.CallToolR
 		validatedCount := summary.MatchingCount + summary.FailedCount
 		summary.AllMatch = validatedCount > 0 && summary.FailedCount == 0
 
+		// Aggregate common errors
+		var commonErrors []CommonError
+		if summary.FailedCount > 0 {
+			errorCounts := make(map[string]int)
+			for _, r := range results {
+				for _, e := range r.Errors {
+					errorCounts[e]++
+				}
+			}
+			commonErrors = make([]CommonError, 0, len(errorCounts))
+			for e, count := range errorCounts {
+				commonErrors = append(commonErrors, CommonError{Error: e, Frequency: count})
+			}
+			sort.Slice(commonErrors, func(i, j int) bool {
+				return commonErrors[i].Frequency > commonErrors[j].Frequency
+			})
+		}
+
 		output := ValidateSchemaOutput{
-			Summary: summary,
-			Results: results,
+			Summary:      summary,
+			Results:      results,
+			CommonErrors: commonErrors,
 		}
 
 		return nil, output, nil
