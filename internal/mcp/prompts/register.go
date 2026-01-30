@@ -48,24 +48,6 @@ func Register(srv *sdkmcp.Server, cfg *Config) {
 		},
 	}, HandleBuildAPIMap(cfg))
 
-	// Prompt 4: Debug GraphQL
-	srv.AddPrompt(&sdkmcp.Prompt{
-		Name:        "debug_graphql",
-		Description: "RECOMMENDED: Debug GraphQL APIs from captured traffic. Clusters by operation, inspects schemas, and surfaces errors.",
-		Arguments: []*sdkmcp.PromptArgument{
-			{
-				Name:        "host",
-				Description: "Filter by host (e.g., api.example.com)",
-				Required:    false,
-			},
-			{
-				Name:        "operation",
-				Description: "Jump directly to a specific operation name (skips survey step)",
-				Required:    false,
-			},
-		},
-	}, HandleDebugGraphQL(cfg))
-
 	// Prompt 3: Generate MVP Scraper
 	srv.AddPrompt(&sdkmcp.Prompt{
 		Name:        "generate_scraper",
