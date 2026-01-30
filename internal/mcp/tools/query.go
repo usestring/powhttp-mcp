@@ -2,14 +2,10 @@ package tools
 
 import (
 	"context"
-	"encoding/base64"
 	"fmt"
-	"strings"
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/usestring/powhttp-mcp/internal/query"
-	"github.com/usestring/powhttp-mcp/pkg/client"
 	"github.com/usestring/powhttp-mcp/pkg/contenttype"
 	"github.com/usestring/powhttp-mcp/pkg/types"
 )
@@ -19,30 +15,32 @@ type QueryBodyInput struct {
 	SessionID   string   `json:"session_id,omitempty" jsonschema:"Session ID (default: active)"`
 	EntryIDs    []string `json:"entry_ids,omitempty" jsonschema:"Query these specific entry IDs"`
 	ClusterID   string   `json:"cluster_id,omitempty" jsonschema:"Query all entries in this cluster"`
-	Expression  string   `json:"expression" jsonschema:"required,JQ expression (e.g., '.data.items[].name')"`
+	Expression  string   `json:"expression" jsonschema:"required,Extraction expression (JQ for JSON/YAML, CSS selector for HTML, XPath for XML, regex for plain text, form key for form-encoded)"`
+	Mode        string   `json:"mode,omitempty" jsonschema:"Expression language: jq, css, xpath, regex, form (auto-detected from content-type if omitted)"`
 	Target      string   `json:"target,omitempty" jsonschema:"Which body to query: request, response, or both (default: response)"`
 	Deduplicate bool     `json:"deduplicate,omitempty" jsonschema:"Remove duplicate values (default: false)"`
 	MaxEntries  int      `json:"max_entries,omitempty" jsonschema:"Max entries to process (default: 20, max: 100)"`
 	MaxResults  int      `json:"max_results,omitempty" jsonschema:"Max results to return (default: 1000)"`
 }
 
-// ToolQueryBody queries HTTP entry bodies using JQ expressions.
+// ToolQueryBody extracts data from request/response bodies using expressions.
+// The expression language is auto-detected from content-type (JQ for JSON/YAML,
+// CSS selectors for HTML, XPath for XML, regex for plain text, form key for
+// form-encoded) or can be set explicitly via the mode parameter.
 func ToolQueryBody(d *Deps) func(ctx context.Context, req *sdkmcp.CallToolRequest, input QueryBodyInput) (*sdkmcp.CallToolResult, types.QueryResponse, error) {
-	engine := query.NewEngine()
-
 	return func(ctx context.Context, req *sdkmcp.CallToolRequest, input QueryBodyInput) (*sdkmcp.CallToolResult, types.QueryResponse, error) {
-		// Validate required input
 		if input.Expression == "" {
 			return nil, types.QueryResponse{}, ErrInvalidInput("expression is required")
 		}
-
 		if input.ClusterID == "" && len(input.EntryIDs) == 0 {
 			return nil, types.QueryResponse{}, ErrInvalidInput("either cluster_id or entry_ids is required")
 		}
 
-		// Validate expression first
-		if err := engine.ValidateExpression(input.Expression); err != nil {
-			return nil, types.QueryResponse{}, ErrInvalidInput(err.Error())
+		// Validate expression if mode is explicitly set
+		if input.Mode != "" {
+			if err := d.TextQuery.ValidateExpression(input.Expression, input.Mode); err != nil {
+				return nil, types.QueryResponse{}, ErrInvalidInput(err.Error())
+			}
 		}
 
 		sessionID := input.SessionID
@@ -89,7 +87,6 @@ func ToolQueryBody(d *Deps) func(ctx context.Context, req *sdkmcp.CallToolReques
 			entryIDs = entryIDs[:maxEntries]
 		}
 
-		// Collect bodies and process
 		output := types.QueryResponse{
 			Summary: types.QuerySummary{
 				Deduplicated: input.Deduplicate,
@@ -100,8 +97,7 @@ func ToolQueryBody(d *Deps) func(ctx context.Context, req *sdkmcp.CallToolReques
 			Hints:   make([]string, 0),
 		}
 
-		var allBodies [][]byte
-		var bodyLabels []string // Labels for error messages (entry_id:target)
+		seen := make(map[string]bool)
 
 		for _, entryID := range entryIDs {
 			entry, err := d.FetchEntry(ctx, sessionID, entryID)
@@ -118,135 +114,109 @@ func ToolQueryBody(d *Deps) func(ctx context.Context, req *sdkmcp.CallToolReques
 
 			output.Summary.EntriesProcessed++
 
-			// Process request body
+			targets := []string{}
 			if target == "request" || target == "both" {
-				bodyBytes, skip, reason := extractBody(entry, "request")
-				if skip {
-					output.Entries = append(output.Entries, types.QueryEntryResult{
-						EntryID:    entryID,
-						Target:     "request",
-						Skipped:    true,
-						SkipReason: reason,
-					})
-				} else if bodyBytes != nil {
-					allBodies = append(allBodies, bodyBytes)
-					bodyLabels = append(bodyLabels, entryID+":request")
-				}
+				targets = append(targets, "request")
 			}
-
-			// Process response body
 			if target == "response" || target == "both" {
-				bodyBytes, skip, reason := extractBody(entry, "response")
-				if skip {
+				targets = append(targets, "response")
+			}
+
+			for _, t := range targets {
+				body, ct, err := d.DecodeBody(entry, t)
+				if err != nil {
 					output.Entries = append(output.Entries, types.QueryEntryResult{
 						EntryID:    entryID,
-						Target:     "response",
+						Target:     t,
 						Skipped:    true,
-						SkipReason: reason,
+						SkipReason: "failed to decode body: " + err.Error(),
 					})
-				} else if bodyBytes != nil {
-					allBodies = append(allBodies, bodyBytes)
-					bodyLabels = append(bodyLabels, entryID+":response")
-				}
-			}
-		}
-
-		// Run the query across all bodies
-		if len(allBodies) > 0 {
-			result, err := engine.QueryMultipleWithLabels(allBodies, bodyLabels, input.Expression, input.Deduplicate, maxResults)
-			if err != nil {
-				return nil, types.QueryResponse{}, ErrInvalidInput(err.Error())
-			}
-
-			output.Values = result.Values
-			output.Errors = append(output.Errors, result.Errors...)
-			output.Summary.TotalValues = result.RawCount
-			output.Summary.UniqueValues = len(result.Values)
-			output.Summary.EntriesMatched = len(result.MatchedIndices)
-			output.Summary.Truncated = len(result.Values) >= maxResults || truncatedEntries
-
-			// Populate entries for non-skipped bodies with their value counts
-			for _, label := range bodyLabels {
-				parts := strings.SplitN(label, ":", 2)
-				if len(parts) != 2 {
 					continue
 				}
-				entryID, entryTarget := parts[0], parts[1]
-				valueCount := result.LabelCounts[label]
-				output.Entries = append(output.Entries, types.QueryEntryResult{
+
+				if body == nil {
+					output.Entries = append(output.Entries, types.QueryEntryResult{
+						EntryID:    entryID,
+						Target:     t,
+						Skipped:    true,
+						SkipReason: "no body",
+					})
+					continue
+				}
+
+				if contenttype.IsBinary(ct, body) {
+					output.Entries = append(output.Entries, types.QueryEntryResult{
+						EntryID:    entryID,
+						Target:     t,
+						Skipped:    true,
+						SkipReason: "binary content type: " + ct,
+					})
+					continue
+				}
+
+				result, err := d.TextQuery.Query(body, ct, input.Expression, input.Mode, maxResults)
+				if err != nil {
+					output.Errors = append(output.Errors, fmt.Sprintf("%s:%s: %s", entryID, t, err.Error()))
+					output.Entries = append(output.Entries, types.QueryEntryResult{
+						EntryID:    entryID,
+						Target:     t,
+						Skipped:    true,
+						SkipReason: err.Error(),
+					})
+					continue
+				}
+
+				// Propagate runtime warnings (e.g., JQ evaluation errors)
+				for _, e := range result.Errors {
+					output.Errors = append(output.Errors, fmt.Sprintf("%s:%s: %s", entryID, t, e))
+				}
+
+				entryResult := types.QueryEntryResult{
 					EntryID:    entryID,
-					Target:     entryTarget,
-					ValueCount: valueCount,
-				})
+					Target:     t,
+					ValueCount: result.Count,
+				}
+
+				for _, v := range result.Values {
+					if maxResults > 0 && len(output.Values) >= maxResults {
+						break
+					}
+					if input.Deduplicate {
+						key := fmt.Sprintf("%v", v)
+						if seen[key] {
+							continue
+						}
+						seen[key] = true
+					}
+					output.Values = append(output.Values, v)
+				}
+
+				if result.Count > 0 {
+					output.Summary.EntriesMatched++
+				}
+				output.Entries = append(output.Entries, entryResult)
 			}
 		}
 
-		// Add helpful hints
-		if output.Summary.TotalValues == 0 && len(allBodies) > 0 {
-			output.Hints = append(output.Hints, "No values matched. Try '.' to see full structure, or 'keys' to list top-level fields.")
-		}
-		if input.Deduplicate && output.Summary.TotalValues > output.Summary.UniqueValues*2 {
-			// Only hint about deduplication if significant reduction (>50%)
-			output.Hints = append(output.Hints, fmt.Sprintf("Deduplicated %d->%d values.", output.Summary.TotalValues, output.Summary.UniqueValues))
+		output.Summary.TotalValues = len(output.Values)
+		output.Summary.UniqueValues = len(output.Values)
+		output.Summary.Truncated = len(output.Values) >= maxResults || truncatedEntries
+
+		// Hints
+		if output.Summary.TotalValues == 0 && output.Summary.EntriesProcessed > 0 {
+			output.Hints = append(output.Hints, "No values matched. For JSON/YAML try '.', 'keys', or '.data.items[]'. For HTML use CSS selectors (e.g., 'h1'). Set mode to force a specific language.")
 		}
 		if output.Summary.Truncated {
 			nextMax := maxResults * 2
 			if nextMax > 10000 {
 				nextMax = 10000
 			}
-			output.Hints = append(output.Hints, fmt.Sprintf("Truncated at %d values. Add entry_ids filter or use max_results=%d for more.", maxResults, nextMax))
+			output.Hints = append(output.Hints, fmt.Sprintf("Truncated at %d values. Use entry_ids filter or max_results=%d for more.", maxResults, nextMax))
 		}
 		if output.Summary.TotalValues > 0 && !output.Summary.Truncated {
 			output.Hints = append(output.Hints, "Query complete.")
 		}
-		// Non-JSON hint: when all entries were skipped due to non-JSON content type
-		if len(allBodies) == 0 && output.Summary.EntriesSkipped > 0 && output.Summary.EntriesProcessed > 0 {
-			allNonJSON := true
-			for _, e := range output.Entries {
-				if e.Skipped && e.SkipReason != "" && !strings.Contains(e.SkipReason, "not JSON content-type") {
-					allNonJSON = false
-					break
-				}
-			}
-			if allNonJSON {
-				output.Hints = append(output.Hints, "All entries have non-JSON content types. Use get_entry with body_mode: \"preview\" to inspect the raw body format.")
-			}
-		}
 
 		return nil, output, nil
 	}
-}
-
-// extractBody extracts and decodes the body from an entry for the given target.
-// Returns (bodyBytes, skipped, skipReason).
-func extractBody(entry *client.SessionEntry, target string) ([]byte, bool, string) {
-	var body *string
-	var contentType string
-
-	if target == "request" {
-		body = entry.Request.Body
-		contentType = entry.Request.Headers.Get("content-type")
-	} else {
-		if entry.Response == nil {
-			return nil, true, "no response"
-		}
-		body = entry.Response.Body
-		contentType = entry.Response.Headers.Get("content-type")
-	}
-
-	if body == nil || *body == "" {
-		return nil, true, "no body"
-	}
-
-	// Check for JSON content type
-	if !contenttype.IsJSON(contentType) {
-		return nil, true, "not JSON content-type: " + contentType
-	}
-
-	bodyBytes, err := base64.StdEncoding.DecodeString(*body)
-	if err != nil {
-		return nil, true, "failed to decode body: " + err.Error()
-	}
-
-	return bodyBytes, false, ""
 }

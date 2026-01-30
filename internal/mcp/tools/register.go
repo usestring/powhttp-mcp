@@ -81,6 +81,6 @@ func Register(srv *sdkmcp.Server, d *Deps) {
 	// Tool 13: powhttp_query_body
 	sdkmcp.AddTool(srv, &sdkmcp.Tool{
 		Name:        "powhttp_query_body",
-		Description: "Extract specific fields from request/response bodies using JQ expressions",
+		Description: "Extract data from request/response bodies using expressions. Auto-detects language from content-type: JQ for JSON/YAML, CSS selectors for HTML, XPath for XML, regex for plain text, form key for form-encoded. Set mode to override.",
 	}, ToolQueryBody(d))
 }
