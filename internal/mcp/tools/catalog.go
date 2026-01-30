@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -114,6 +115,39 @@ func ToolExtractEndpoints(d *Deps) func(ctx context.Context, req *sdkmcp.CallToo
 			hint = fmt.Sprintf("Found %d clusters. Use powhttp_describe_endpoint(cluster_id=...) for schema and examples.", len(resp.Clusters))
 		}
 
+		// Detect GraphQL endpoints by probing a sample entry body from each
+		// POST cluster. No path pre-filtering — catches custom paths like /api/data.
+		// Uses the shared parse cache so results are reusable across tool calls.
+		var gqlEndpoints []string // display labels, e.g. "POST api.example.com/graphql (45 reqs)"
+		var gqlHosts []string    // corresponding host for each endpoint
+		for _, c := range resp.Clusters {
+			if c.Method != "POST" || len(c.ExampleEntryIDs) == 0 {
+				continue
+			}
+			// Try all example entries — any single valid GraphQL body confirms the cluster.
+			isGQL := false
+			for _, eid := range c.ExampleEntryIDs {
+				if _, ok := parseGraphQLEntry(ctx, d, sessionID, eid); ok {
+					isGQL = true
+					break
+				}
+			}
+			if !isGQL {
+				continue
+			}
+			gqlEndpoints = append(gqlEndpoints, fmt.Sprintf("POST %s%s (%d reqs)", c.Host, c.PathTemplate, c.Count))
+			gqlHosts = append(gqlHosts, c.Host)
+		}
+
+		if len(gqlEndpoints) > 0 {
+			hint += fmt.Sprintf(" GraphQL detected: %s.", strings.Join(gqlEndpoints, "; "))
+			if len(gqlEndpoints) == 1 {
+				hint += fmt.Sprintf(" Use powhttp_graphql_operations(scope={host: %q}) for operation-level analysis.", gqlHosts[0])
+			} else {
+				hint += " Use powhttp_graphql_operations() for operation-level analysis."
+			}
+		}
+
 		return nil, ExtractEndpointsOutput{
 			Clusters:   resp.Clusters,
 			TotalCount: resp.TotalCount,
@@ -160,3 +194,4 @@ func ToolDescribeEndpoint(d *Deps) func(ctx context.Context, req *sdkmcp.CallToo
 		}, nil
 	}
 }
+
