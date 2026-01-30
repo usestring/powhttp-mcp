@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"sync"
 
 	"github.com/usestring/powhttp-mcp/internal/cache"
 	"github.com/usestring/powhttp-mcp/internal/catalog"
@@ -12,6 +13,7 @@ import (
 	"github.com/usestring/powhttp-mcp/internal/indexer"
 	"github.com/usestring/powhttp-mcp/internal/search"
 	"github.com/usestring/powhttp-mcp/pkg/client"
+	"github.com/usestring/powhttp-mcp/pkg/textquery"
 )
 
 // Deps contains all dependencies needed by tool handlers.
@@ -27,6 +29,12 @@ type Deps struct {
 	Describe     *catalog.DescribeEngine
 	ClusterStore *catalog.ClusterStore
 	Flow         *flow.FlowEngine
+	TextQuery    *textquery.Engine
+
+	// GraphQLParseCache caches parsed GraphQL request bodies by entry ID,
+	// avoiding redundant fetch+decode+parse across tool calls (e.g.,
+	// graphql_operations → graphql_inspect → graphql_errors on same entries).
+	GraphQLParseCache sync.Map // entryID → *graphqlParseCacheEntry
 }
 
 // FetchEntry retrieves an entry by ID, checking the cache first.

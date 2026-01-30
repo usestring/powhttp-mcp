@@ -6,7 +6,7 @@ The `mcp` package implements a [Model Context Protocol (MCP)](https://modelconte
 
 This package wraps the official [Go MCP SDK](https://github.com/modelcontextprotocol/go-sdk) and exposes powhttp functionality through:
 
-- **13 Tools** - Structured functions for HTTP traffic analysis
+- **17 Tools** - Structured functions for HTTP traffic analysis
 - **6 Resource Templates** - Access to raw data (entries, TLS, HTTP/2, diffs, etc.)
 - **4 Prompts** - Guided workflows for common tasks
 
@@ -64,6 +64,10 @@ err = server.Run(ctx) // stdio transport
 | `powhttp_trace_flow` | Trace related requests around a seed entry |
 | `powhttp_validate_schema` | Validate entry bodies against a schema |
 | `powhttp_query_body` | Extract specific fields from bodies using JQ expressions |
+| `powhttp_infer_schema` | Infer merged schema from multiple entry bodies with field statistics |
+| `powhttp_graphql_operations` | Cluster GraphQL traffic by operation name and type |
+| `powhttp_graphql_inspect` | Parse and inspect individual GraphQL operations |
+| `powhttp_graphql_errors` | Extract and categorize GraphQL errors from responses |
 
 See tool source files in `tools/` for detailed input/output schemas.
 
@@ -84,6 +88,29 @@ Tools are optimized to minimize context usage by default:
 - Extract specific fields directly using JQ expressions
 - No need to fetch full bodies for data extraction
 - Supports `deduplicate: true` to remove duplicate values
+
+**`powhttp_infer_schema`**
+- Infers a merged schema from multiple entry bodies with field statistics (frequency, required/optional, formats, enums)
+- Handles all content types: JSON/YAML get JSON Schema, others get structural outlines
+- Use before `powhttp_query_body` to discover available fields and their types
+
+### GraphQL Tools
+
+For GraphQL APIs, use the dedicated tools instead of `powhttp_extract_endpoints` (which collapses all GraphQL operations into one cluster):
+
+**`powhttp_graphql_operations`**
+- Clusters by operation name and type (query/mutation/subscription)
+- Returns counts, error counts, fields, and example entry IDs
+- The GraphQL equivalent of `powhttp_extract_endpoints`
+
+**`powhttp_graphql_inspect`**
+- Parses variables_schema, response_schema, and field statistics for an operation
+- Accepts `entry_ids` or `operation_name`
+
+**`powhttp_graphql_errors`**
+- Groups errors by message with paths and extensions
+- Distinguishes partial failures (data + errors) from full failures (null data + errors)
+- Hints point to the most-errored operation for actionable debugging
 
 ## Resources
 
