@@ -5,6 +5,16 @@ import (
 	"os"
 	"strconv"
 	"time"
+
+	"github.com/usestring/powhttp-mcp/pkg/jsoncompact"
+)
+
+// Tool output limit defaults
+const (
+	DefaultSearchLimitValue     = 10
+	DefaultQueryLimitValue      = 20
+	DefaultClusterLimitValue    = 15
+	DefaultExamplesPerItemValue = 3
 )
 
 // Config holds all configuration for the MCP server.
@@ -24,6 +34,17 @@ type Config struct {
 	ResourceMaxBodyBytes int           // RESOURCE_MAX_BODY_BYTES, default 65536 (64KB)
 	IndexBody            bool          // INDEX_BODY, default false
 	IndexBodyMaxBytes    int           // INDEX_BODY_MAX_BYTES, default 65536
+
+	// Compaction defaults (for AI-optimized responses)
+	CompactMaxArrayItems int // COMPACT_MAX_ARRAY_ITEMS
+	CompactMaxStringLen  int // COMPACT_MAX_STRING_LEN
+	CompactMaxDepth      int // COMPACT_MAX_DEPTH
+
+	// Tool output limits
+	DefaultSearchLimit     int // DEFAULT_SEARCH_LIMIT
+	DefaultQueryLimit      int // DEFAULT_QUERY_LIMIT
+	DefaultClusterLimit    int // DEFAULT_CLUSTER_LIMIT
+	DefaultExamplesPerItem int // DEFAULT_EXAMPLES_PER_ITEM
 
 	// Logging configuration
 	LogLevel      string // LOG_LEVEL, default "info"
@@ -52,6 +73,17 @@ func Load() *Config {
 		ResourceMaxBodyBytes: getEnvInt("RESOURCE_MAX_BODY_BYTES", 65536),
 		IndexBody:            getEnvBool("INDEX_BODY", false),
 		IndexBodyMaxBytes:    getEnvInt("INDEX_BODY_MAX_BYTES", 65536),
+
+		// Compaction defaults (from jsoncompact package)
+		CompactMaxArrayItems: getEnvInt("COMPACT_MAX_ARRAY_ITEMS", jsoncompact.DefaultMaxArrayItems),
+		CompactMaxStringLen:  getEnvInt("COMPACT_MAX_STRING_LEN", jsoncompact.DefaultMaxStringLen),
+		CompactMaxDepth:      getEnvInt("COMPACT_MAX_DEPTH", jsoncompact.DefaultMaxDepth),
+
+		// Tool output limits
+		DefaultSearchLimit:     getEnvInt("DEFAULT_SEARCH_LIMIT", DefaultSearchLimitValue),
+		DefaultQueryLimit:      getEnvInt("DEFAULT_QUERY_LIMIT", DefaultQueryLimitValue),
+		DefaultClusterLimit:    getEnvInt("DEFAULT_CLUSTER_LIMIT", DefaultClusterLimitValue),
+		DefaultExamplesPerItem: getEnvInt("DEFAULT_EXAMPLES_PER_ITEM", DefaultExamplesPerItemValue),
 
 		LogLevel:      getEnvString("LOG_LEVEL", "info"),
 		LogFile:       getEnvString("LOG_FILE", ""),

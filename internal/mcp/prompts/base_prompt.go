@@ -40,9 +40,9 @@ func HandleBasePrompt(cfg *Config) func(ctx context.Context, req *sdkmcp.GetProm
 - **No headers by default**: Headers excluded to save tokens
 - Check ` + "`available_data`" + ` in the response to see what was included and plan follow-up calls
 - **Body modes**:
-  - ` + "`schema`" + ` (default): JSON schema only
-  - ` + "`preview`" + `: First 2KB of actual data
-  - ` + "`full`" + `: Complete body
+  - ` + "`compact`" + ` (default): Arrays trimmed to 3 items with "... (N more)" indicator
+  - ` + "`schema`" + `: JSON schema only (structure without values)
+  - ` + "`full`" + `: Complete body (use sparingly)
 
 ## Recommended Workflows
 

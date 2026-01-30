@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"fmt"
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -45,6 +46,7 @@ type SearchEntriesOutput struct {
 	TotalHint     int                  `json:"total_hint,omitempty"`
 	SyncedAtMs    int64                `json:"synced_at_ms"`
 	SearchedScope *types.SearchScope   `json:"searched_scope,omitempty"`
+	Hint          string               `json:"hint,omitempty"`
 }
 
 // ToolSearchEntries searches HTTP entries.
@@ -57,7 +59,7 @@ func ToolSearchEntries(d *Deps) func(ctx context.Context, req *sdkmcp.CallToolRe
 
 		limit := input.Limit
 		if limit <= 0 {
-			limit = 10
+			limit = d.Config.DefaultSearchLimit
 		}
 
 		searchReq := &types.SearchRequest{
@@ -110,11 +112,25 @@ func ToolSearchEntries(d *Deps) func(ctx context.Context, req *sdkmcp.CallToolRe
 			}
 		}
 
+		// Build helpful hint with concrete values
+		var hint string
+		if len(resp.Results) == 0 {
+			hint = "No matches found. Check session_id is correct and filters aren't too restrictive."
+		} else if resp.TotalHint > len(resp.Results) {
+			nextOffset := input.Offset + len(resp.Results)
+			hint = fmt.Sprintf("Showing %d of ~%d. Add host/path filters to narrow, or use offset=%d for next page.", len(resp.Results), resp.TotalHint, nextOffset)
+		} else if len(resp.Results) == 1 && resp.Results[0].Summary != nil {
+			hint = fmt.Sprintf("Single match. Use get_entry(entry_id=%q) for full details.", resp.Results[0].Summary.EntryID)
+		} else {
+			hint = "Use get_entry with an entry_id for details, or extract_endpoints to see API patterns."
+		}
+
 		return nil, SearchEntriesOutput{
 			Results:       resp.Results,
 			TotalHint:     resp.TotalHint,
 			SyncedAtMs:    resp.SyncedAtMs,
 			SearchedScope: resp.Scope,
+			Hint:          hint,
 		}, nil
 	}
 }

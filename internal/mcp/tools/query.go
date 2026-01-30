@@ -72,7 +72,7 @@ func ToolQueryBody(d *Deps) func(ctx context.Context, req *sdkmcp.CallToolReques
 		// Apply limits
 		maxEntries := input.MaxEntries
 		if maxEntries <= 0 {
-			maxEntries = 20
+			maxEntries = d.Config.DefaultQueryLimit
 		}
 		if maxEntries > 100 {
 			maxEntries = 100
@@ -182,13 +182,21 @@ func ToolQueryBody(d *Deps) func(ctx context.Context, req *sdkmcp.CallToolReques
 
 		// Add helpful hints
 		if output.Summary.TotalValues == 0 && len(allBodies) > 0 {
-			output.Hints = append(output.Hints, "No values matched. Try a simpler expression like '.' to see the full structure.")
+			output.Hints = append(output.Hints, "No values matched. Try '.' to see full structure, or 'keys' to list top-level fields.")
 		}
-		if input.Deduplicate && output.Summary.TotalValues > output.Summary.UniqueValues {
-			output.Hints = append(output.Hints, fmt.Sprintf("Deduplication removed %d duplicate values.", output.Summary.TotalValues-output.Summary.UniqueValues))
+		if input.Deduplicate && output.Summary.TotalValues > output.Summary.UniqueValues*2 {
+			// Only hint about deduplication if significant reduction (>50%)
+			output.Hints = append(output.Hints, fmt.Sprintf("Deduplicated %d->%d values.", output.Summary.TotalValues, output.Summary.UniqueValues))
 		}
 		if output.Summary.Truncated {
-			output.Hints = append(output.Hints, "Results were truncated. Use filters or increase max_results.")
+			nextMax := maxResults * 2
+			if nextMax > 10000 {
+				nextMax = 10000
+			}
+			output.Hints = append(output.Hints, fmt.Sprintf("Truncated at %d values. Add entry_ids filter or use max_results=%d for more.", maxResults, nextMax))
+		}
+		if output.Summary.TotalValues > 0 && !output.Summary.Truncated {
+			output.Hints = append(output.Hints, "Query complete.")
 		}
 		// Non-JSON hint: when all entries were skipped due to non-JSON content type
 		if len(allBodies) == 0 && output.Summary.EntriesSkipped > 0 && output.Summary.EntriesProcessed > 0 {
