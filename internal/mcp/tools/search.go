@@ -52,9 +52,9 @@ type SearchEntriesOutput struct {
 // ToolSearchEntries searches HTTP entries.
 func ToolSearchEntries(d *Deps) func(ctx context.Context, req *sdkmcp.CallToolRequest, input SearchEntriesInput) (*sdkmcp.CallToolResult, SearchEntriesOutput, error) {
 	return func(ctx context.Context, req *sdkmcp.CallToolRequest, input SearchEntriesInput) (*sdkmcp.CallToolResult, SearchEntriesOutput, error) {
-		sessionID := input.SessionID
-		if sessionID == "" {
-			sessionID = "active"
+		sessionID, err := d.ResolveSessionID(ctx, input.SessionID)
+		if err != nil {
+			return nil, SearchEntriesOutput{}, err
 		}
 
 		limit := input.Limit

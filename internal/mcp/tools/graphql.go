@@ -89,9 +89,9 @@ type GraphQLErrorsOutput struct {
 // ToolGraphQLOperations clusters GraphQL traffic by operation name and type.
 func ToolGraphQLOperations(d *Deps) func(ctx context.Context, req *sdkmcp.CallToolRequest, input GraphQLOperationsInput) (*sdkmcp.CallToolResult, GraphQLOperationsOutput, error) {
 	return func(ctx context.Context, req *sdkmcp.CallToolRequest, input GraphQLOperationsInput) (*sdkmcp.CallToolResult, GraphQLOperationsOutput, error) {
-		sessionID := input.SessionID
-		if sessionID == "" {
-			sessionID = "active"
+		sessionID, err := d.ResolveSessionID(ctx, input.SessionID)
+		if err != nil {
+			return nil, GraphQLOperationsOutput{}, err
 		}
 
 		if input.OperationType != "" {
@@ -349,9 +349,9 @@ func ToolGraphQLInspect(d *Deps) func(ctx context.Context, req *sdkmcp.CallToolR
 			return nil, GraphQLInspectOutput{}, ErrInvalidInput("either entry_ids or operation_name is required")
 		}
 
-		sessionID := input.SessionID
-		if sessionID == "" {
-			sessionID = "active"
+		sessionID, err := d.ResolveSessionID(ctx, input.SessionID)
+		if err != nil {
+			return nil, GraphQLInspectOutput{}, err
 		}
 
 		includeQuery := true
@@ -475,9 +475,9 @@ func ToolGraphQLErrors(d *Deps) func(ctx context.Context, req *sdkmcp.CallToolRe
 			return nil, GraphQLErrorsOutput{}, ErrInvalidInput("either entry_ids or operation_name is required")
 		}
 
-		sessionID := input.SessionID
-		if sessionID == "" {
-			sessionID = "active"
+		sessionID, err := d.ResolveSessionID(ctx, input.SessionID)
+		if err != nil {
+			return nil, GraphQLErrorsOutput{}, err
 		}
 
 		errorsOnly := true

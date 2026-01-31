@@ -72,9 +72,9 @@ func ToolValidateSchema(d *Deps) func(ctx context.Context, req *sdkmcp.CallToolR
 			return nil, ValidateSchemaOutput{}, ErrInvalidInput("either cluster_id or entry_ids is required")
 		}
 
-		sessionID := input.SessionID
-		if sessionID == "" {
-			sessionID = "active"
+		sessionID, err := d.ResolveSessionID(ctx, input.SessionID)
+		if err != nil {
+			return nil, ValidateSchemaOutput{}, err
 		}
 
 		target := input.Target
