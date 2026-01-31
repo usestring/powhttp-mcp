@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -119,6 +120,11 @@ func ToolInferSchema(d *Deps) func(ctx context.Context, req *sdkmcp.CallToolRequ
 			return nil, types.InferSchemaOutput{}, fmt.Errorf("shape analysis failed: %w", err)
 		}
 
+		shapeJSON, err := json.Marshal(result)
+		if err != nil {
+			return nil, types.InferSchemaOutput{}, fmt.Errorf("marshaling shape result: %w", err)
+		}
+
 		// Build contextual hint for tool chaining
 		var hint string
 		if input.ClusterID != "" {
@@ -128,7 +134,7 @@ func ToolInferSchema(d *Deps) func(ctx context.Context, req *sdkmcp.CallToolRequ
 		}
 
 		output := types.InferSchemaOutput{
-			Shape: result,
+			Shape: shapeJSON,
 			Summary: types.InferSchemaSummary{
 				EntriesRequested: len(entryIDs),
 				EntriesProcessed: entriesProcessed,

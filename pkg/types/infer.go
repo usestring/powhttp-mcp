@@ -1,12 +1,12 @@
 package types
 
-import "github.com/usestring/powhttp-mcp/pkg/shape"
+import "encoding/json"
 
 // InferSchemaOutput is the aggregate output type for the powhttp_infer_schema tool.
 // It spans types from both pkg/jsonschema and pkg/shape.
 type InferSchemaOutput struct {
 	// Shape analysis result (contains content_category and format-specific fields)
-	Shape *shape.Result `json:"shape"`
+	Shape json.RawMessage `json:"shape"`
 
 	// Summary of the inference process
 	Summary InferSchemaSummary `json:"summary"`

@@ -1,6 +1,6 @@
 package types
 
-import "github.com/usestring/powhttp-mcp/pkg/shape"
+import "encoding/json"
 
 // ClusterKey is the composite key for clustering: host + method + path_template.
 type ClusterKey struct {
@@ -71,8 +71,8 @@ type EndpointDescription struct {
 	TypicalHeaders    []HeaderFrequency  `json:"typical_headers"`
 	AuthSignals       AuthSignals        `json:"auth_signals"`
 	QueryKeys         QueryKeyAnalysis   `json:"query_keys"`
-	RequestBodyShape  *shape.Result `json:"request_body_shape,omitempty"`
-	ResponseBodyShape *shape.Result `json:"response_body_shape,omitempty"`
+	RequestBodyShape  json.RawMessage `json:"request_body_shape,omitempty"`
+	ResponseBodyShape json.RawMessage `json:"response_body_shape,omitempty"`
 	Examples          []ExampleEntry `json:"examples"`
 }
 
