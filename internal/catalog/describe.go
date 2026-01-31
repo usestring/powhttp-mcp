@@ -3,6 +3,7 @@ package catalog
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"sort"
@@ -66,8 +67,8 @@ func (d *DescribeEngine) Describe(ctx context.Context, req *types.DescribeReques
 	headers := analyzeHeaders(entries)
 	authSignals := detectAuthSignals(entries)
 	queryKeys := analyzeQueryKeys(entries)
-	reqShape := d.extractBodyShape(entries, "request")
-	respShape := d.extractBodyShape(entries, "response")
+	reqShapeJSON := marshalShapeResult(d.extractBodyShape(entries, "request"))
+	respShapeJSON := marshalShapeResult(d.extractBodyShape(entries, "response"))
 
 	// Build examples
 	examples := make([]types.ExampleEntry, 0, len(entries))
@@ -91,8 +92,8 @@ func (d *DescribeEngine) Describe(ctx context.Context, req *types.DescribeReques
 		TypicalHeaders:    headers,
 		AuthSignals:       authSignals,
 		QueryKeys:         queryKeys,
-		RequestBodyShape:  reqShape,
-		ResponseBodyShape: respShape,
+		RequestBodyShape:  reqShapeJSON,
+		ResponseBodyShape: respShapeJSON,
 		Examples:          examples,
 	}, nil
 }
@@ -350,4 +351,17 @@ func (d *DescribeEngine) extractBodyShape(entries []*client.SessionEntry, target
 	}
 
 	return result
+}
+
+// marshalShapeResult serializes a shape.Result to json.RawMessage.
+// Returns nil if the result is nil or marshaling fails.
+func marshalShapeResult(r *shape.Result) json.RawMessage {
+	if r == nil {
+		return nil
+	}
+	data, err := json.Marshal(r)
+	if err != nil {
+		return nil
+	}
+	return data
 }

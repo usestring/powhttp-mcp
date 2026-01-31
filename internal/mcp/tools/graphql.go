@@ -59,10 +59,10 @@ type GraphQLInspectInput struct {
 
 // GraphQLInspectOutput is the output for powhttp_graphql_inspect.
 type GraphQLInspectOutput struct {
-	Operations      []graphql.InspectedOperation `json:"operations"`
-	EntriesChecked  int                          `json:"entries_checked"`
-	EntriesMatched  int                          `json:"entries_matched"`
-	Hint            string                       `json:"hint,omitempty"`
+	Operations      []json.RawMessage `json:"operations"`
+	EntriesChecked  int               `json:"entries_checked"`
+	EntriesMatched  int               `json:"entries_matched"`
+	Hint            string            `json:"hint,omitempty"`
 }
 
 // GraphQLErrorsInput is the input for powhttp_graphql_errors.
@@ -379,7 +379,7 @@ func ToolGraphQLInspect(d *Deps) func(ctx context.Context, req *sdkmcp.CallToolR
 		}
 
 		// Inspect each entry
-		var operations []graphql.InspectedOperation
+		var operations []json.RawMessage
 		entriesChecked := 0
 		entriesMatched := 0
 
@@ -434,7 +434,11 @@ func ToolGraphQLInspect(d *Deps) func(ctx context.Context, req *sdkmcp.CallToolR
 					}
 				}
 
-				operations = append(operations, inspected)
+				// Marshal to json.RawMessage to avoid exposing recursive
+				// jsonschema.Schema types in the MCP tool output schema.
+				if opJSON, err := json.Marshal(inspected); err == nil {
+					operations = append(operations, opJSON)
+				}
 			}
 		}
 
