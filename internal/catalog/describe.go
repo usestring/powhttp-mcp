@@ -67,8 +67,14 @@ func (d *DescribeEngine) Describe(ctx context.Context, req *types.DescribeReques
 	headers := analyzeHeaders(entries)
 	authSignals := detectAuthSignals(entries)
 	queryKeys := analyzeQueryKeys(entries)
-	reqShapeJSON := marshalShapeResult(d.extractBodyShape(entries, "request"))
-	respShapeJSON := marshalShapeResult(d.extractBodyShape(entries, "response"))
+	reqShapeJSON, err := marshalShapeResult(d.extractBodyShape(entries, "request"))
+	if err != nil {
+		return nil, fmt.Errorf("marshaling request body shape: %w", err)
+	}
+	respShapeJSON, err := marshalShapeResult(d.extractBodyShape(entries, "response"))
+	if err != nil {
+		return nil, fmt.Errorf("marshaling response body shape: %w", err)
+	}
 
 	// Build examples
 	examples := make([]types.ExampleEntry, 0, len(entries))
@@ -354,14 +360,10 @@ func (d *DescribeEngine) extractBodyShape(entries []*client.SessionEntry, target
 }
 
 // marshalShapeResult serializes a shape.Result to json.RawMessage.
-// Returns nil if the result is nil or marshaling fails.
-func marshalShapeResult(r *shape.Result) json.RawMessage {
+// Returns (nil, nil) if the result is nil.
+func marshalShapeResult(r *shape.Result) (json.RawMessage, error) {
 	if r == nil {
-		return nil
+		return nil, nil
 	}
-	data, err := json.Marshal(r)
-	if err != nil {
-		return nil
-	}
-	return data
+	return json.Marshal(r)
 }

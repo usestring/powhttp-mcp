@@ -436,9 +436,11 @@ func ToolGraphQLInspect(d *Deps) func(ctx context.Context, req *sdkmcp.CallToolR
 
 				// Marshal to json.RawMessage to avoid exposing recursive
 				// jsonschema.Schema types in the MCP tool output schema.
-				if opJSON, err := json.Marshal(inspected); err == nil {
-					operations = append(operations, opJSON)
+				opJSON, err := json.Marshal(inspected)
+				if err != nil {
+					return nil, GraphQLInspectOutput{}, fmt.Errorf("marshaling inspected operation: %w", err)
 				}
+				operations = append(operations, opJSON)
 			}
 		}
 
