@@ -63,9 +63,9 @@ type DescribeEndpointOutput struct {
 // ToolExtractEndpoints extracts endpoint clusters.
 func ToolExtractEndpoints(d *Deps) func(ctx context.Context, req *sdkmcp.CallToolRequest, input ExtractEndpointsInput) (*sdkmcp.CallToolResult, ExtractEndpointsOutput, error) {
 	return func(ctx context.Context, req *sdkmcp.CallToolRequest, input ExtractEndpointsInput) (*sdkmcp.CallToolResult, ExtractEndpointsOutput, error) {
-		sessionID := input.SessionID
-		if sessionID == "" {
-			sessionID = "active"
+		sessionID, err := d.ResolveSessionID(ctx, input.SessionID)
+		if err != nil {
+			return nil, ExtractEndpointsOutput{}, err
 		}
 
 		limit := input.Limit
@@ -169,9 +169,9 @@ func ToolDescribeEndpoint(d *Deps) func(ctx context.Context, req *sdkmcp.CallToo
 			return nil, DescribeEndpointOutput{}, ErrInvalidInput("cluster_id is required")
 		}
 
-		sessionID := input.SessionID
-		if sessionID == "" {
-			sessionID = "active"
+		sessionID, err := d.ResolveSessionID(ctx, input.SessionID)
+		if err != nil {
+			return nil, DescribeEndpointOutput{}, err
 		}
 
 		descReq := &types.DescribeRequest{

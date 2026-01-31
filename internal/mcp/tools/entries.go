@@ -97,9 +97,9 @@ func ToolGetEntry(d *Deps) func(ctx context.Context, req *sdkmcp.CallToolRequest
 			return nil, GetEntryOutput{}, ErrInvalidInput("entry_id is required")
 		}
 
-		sessionID := input.SessionID
-		if sessionID == "" {
-			sessionID = "active"
+		sessionID, err := d.ResolveSessionID(ctx, input.SessionID)
+		if err != nil {
+			return nil, GetEntryOutput{}, err
 		}
 
 		// Validate body mode

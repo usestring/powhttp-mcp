@@ -33,9 +33,9 @@ func ToolInferSchema(d *Deps) func(ctx context.Context, req *sdkmcp.CallToolRequ
 			return nil, types.InferSchemaOutput{}, ErrInvalidInput("either cluster_id or entry_ids is required")
 		}
 
-		sessionID := input.SessionID
-		if sessionID == "" {
-			sessionID = "active"
+		sessionID, err := d.ResolveSessionID(ctx, input.SessionID)
+		if err != nil {
+			return nil, types.InferSchemaOutput{}, err
 		}
 
 		target := input.Target

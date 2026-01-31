@@ -2,7 +2,11 @@ package tools
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"strings"
 	"sync"
+	"time"
 
 	"github.com/usestring/powhttp-mcp/internal/cache"
 	"github.com/usestring/powhttp-mcp/internal/catalog"
@@ -48,4 +52,52 @@ func (d *Deps) FetchEntry(ctx context.Context, sessionID, entryID string) (*clie
 // header value. Does not filter by content type.
 func (d *Deps) DecodeBody(entry *client.SessionEntry, target string) ([]byte, string, error) {
 	return entryfetch.DecodeBody(entry, target)
+}
+
+// ResolveSessionID resolves the session ID to use for a request.
+// If sessionID is non-empty, it is returned as-is.
+// If sessionID is empty, it attempts to use "active". If that fails,
+// it falls back to listing sessions: if exactly one exists, its ID is
+// returned; if multiple exist, an error listing them is returned.
+func (d *Deps) ResolveSessionID(ctx context.Context, sessionID string) (string, error) {
+	if sessionID != "" {
+		return sessionID, nil
+	}
+
+	// Try "active" first with a short timeout so we fall through quickly
+	// when powhttp ep is unreachable or slow.
+	activeCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+
+	session, err := d.Client.GetSession(activeCtx, "active")
+	if err == nil {
+		return session.ID, nil
+	}
+
+	// "active" failed — try listing all sessions.
+	sessions, listErr := d.Client.ListSessions(ctx)
+	if listErr != nil {
+		// Both failed. Prefer the original error but note the list failure.
+		return "", WrapPowHTTPError(fmt.Errorf("no active session (listing sessions also failed: %w)", errors.Join(err, listErr)))
+	}
+
+	switch len(sessions) {
+	case 0:
+		return "", WrapPowHTTPError(err)
+	case 1:
+		return sessions[0].ID, nil
+	default:
+		names := make([]string, len(sessions))
+		for i, s := range sessions {
+			if s.Name != "" {
+				names[i] = fmt.Sprintf("%s (%s)", s.ID, s.Name)
+			} else {
+				names[i] = s.ID
+			}
+		}
+		return "", ErrInvalidInput(fmt.Sprintf(
+			"no active session and multiple sessions available; specify session_id: %s",
+			strings.Join(names, ", "),
+		))
+	}
 }

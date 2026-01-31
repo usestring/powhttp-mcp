@@ -55,7 +55,12 @@ func ToolSessionsList(d *Deps) func(ctx context.Context, req *sdkmcp.CallToolReq
 // ToolSessionActive gets the active session.
 func ToolSessionActive(d *Deps) func(ctx context.Context, req *sdkmcp.CallToolRequest, input SessionActiveInput) (*sdkmcp.CallToolResult, SessionActiveOutput, error) {
 	return func(ctx context.Context, req *sdkmcp.CallToolRequest, input SessionActiveInput) (*sdkmcp.CallToolResult, SessionActiveOutput, error) {
-		session, err := d.Client.GetSession(ctx, "active")
+		sessionID, err := d.ResolveSessionID(ctx, "")
+		if err != nil {
+			return nil, SessionActiveOutput{}, err
+		}
+
+		session, err := d.Client.GetSession(ctx, sessionID)
 		if err != nil {
 			return nil, SessionActiveOutput{}, WrapPowHTTPError(err)
 		}

@@ -44,9 +44,9 @@ func ToolDiffEntries(d *Deps) func(ctx context.Context, req *sdkmcp.CallToolRequ
 			return nil, DiffEntriesOutput{}, ErrInvalidInput("candidate_entry_id is required")
 		}
 
-		sessionID := input.SessionID
-		if sessionID == "" {
-			sessionID = "active"
+		sessionID, err := d.ResolveSessionID(ctx, input.SessionID)
+		if err != nil {
+			return nil, DiffEntriesOutput{}, err
 		}
 
 		diffReq := &types.DiffRequest{

@@ -44,9 +44,9 @@ func ToolQueryBody(d *Deps) func(ctx context.Context, req *sdkmcp.CallToolReques
 			}
 		}
 
-		sessionID := input.SessionID
-		if sessionID == "" {
-			sessionID = "active"
+		sessionID, err := d.ResolveSessionID(ctx, input.SessionID)
+		if err != nil {
+			return nil, types.QueryResponse{}, err
 		}
 
 		target := input.Target

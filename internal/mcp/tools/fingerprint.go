@@ -31,9 +31,9 @@ func ToolFingerprint(d *Deps) func(ctx context.Context, req *sdkmcp.CallToolRequ
 			return nil, FingerprintOutput{}, ErrInvalidInput("entry_id is required")
 		}
 
-		sessionID := input.SessionID
-		if sessionID == "" {
-			sessionID = "active"
+		sessionID, err := d.ResolveSessionID(ctx, input.SessionID)
+		if err != nil {
+			return nil, FingerprintOutput{}, err
 		}
 
 		// Use defaults if not explicitly set to false

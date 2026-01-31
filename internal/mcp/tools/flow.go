@@ -40,9 +40,9 @@ func ToolTraceFlow(d *Deps) func(ctx context.Context, req *sdkmcp.CallToolReques
 			return nil, TraceFlowOutput{}, ErrInvalidInput("seed_entry_id is required")
 		}
 
-		sessionID := input.SessionID
-		if sessionID == "" {
-			sessionID = "active"
+		sessionID, err := d.ResolveSessionID(ctx, input.SessionID)
+		if err != nil {
+			return nil, TraceFlowOutput{}, err
 		}
 
 		traceReq := &types.TraceRequest{
