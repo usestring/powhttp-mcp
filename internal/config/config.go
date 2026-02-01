@@ -17,6 +17,13 @@ const (
 	DefaultExamplesPerItemValue = 3
 )
 
+// Processing safety cap defaults
+const (
+	MaxSearchResultsValue = 10000
+	MaxQueryEntriesValue  = 10000
+	MaxInferEntriesValue  = 10000
+)
+
 // Config holds all configuration for the MCP server.
 type Config struct {
 	PowHTTPBaseURL       string        // POWHTTP_BASE_URL, default "http://localhost:7777"
@@ -45,6 +52,11 @@ type Config struct {
 	DefaultQueryLimit      int // DEFAULT_QUERY_LIMIT
 	DefaultClusterLimit    int // DEFAULT_CLUSTER_LIMIT
 	DefaultExamplesPerItem int // DEFAULT_EXAMPLES_PER_ITEM
+
+	// Processing safety caps (configurable upper bounds for search/processing space)
+	MaxSearchResults int // MAX_SEARCH_RESULTS, default 10000
+	MaxQueryEntries  int // MAX_QUERY_ENTRIES, default 10000
+	MaxInferEntries  int // MAX_INFER_ENTRIES, default 10000
 
 	// Logging configuration
 	LogLevel      string // LOG_LEVEL, default "info"
@@ -84,6 +96,10 @@ func Load() *Config {
 		DefaultQueryLimit:      getEnvInt("DEFAULT_QUERY_LIMIT", DefaultQueryLimitValue),
 		DefaultClusterLimit:    getEnvInt("DEFAULT_CLUSTER_LIMIT", DefaultClusterLimitValue),
 		DefaultExamplesPerItem: getEnvInt("DEFAULT_EXAMPLES_PER_ITEM", DefaultExamplesPerItemValue),
+
+		MaxSearchResults: getEnvInt("MAX_SEARCH_RESULTS", MaxSearchResultsValue),
+		MaxQueryEntries:  getEnvInt("MAX_QUERY_ENTRIES", MaxQueryEntriesValue),
+		MaxInferEntries:  getEnvInt("MAX_INFER_ENTRIES", MaxInferEntriesValue),
 
 		LogLevel:      getEnvString("LOG_LEVEL", "info"),
 		LogFile:       getEnvString("LOG_FILE", ""),

@@ -17,6 +17,7 @@ import (
 // Panics if the zero value of Out fails schema validation.
 func AddTool[In, Out any](srv *sdkmcp.Server, t *sdkmcp.Tool, h sdkmcp.ToolHandlerFor[In, Out]) {
 	CheckOutputSchema[Out](t.Name)
+	fixBooleanSchemas[Out](t)
 	sdkmcp.AddTool(srv, t, h)
 }
 
@@ -168,6 +169,127 @@ func findNilDefaultFields(t reflect.Type, path []string, visited map[reflect.Typ
 		}
 	}
 	return found
+}
+
+// fixBooleanSchemas pre-computes the output schema for the tool and replaces
+// boolean JSON Schemas (true) with empty objects ({}). The jsonschema-go library
+// correctly marshals empty schemas as true per JSON Schema Draft 2020-12, but the
+// MCP protocol validation rejects boolean schemas in outputSchema properties.
+//
+// By setting t.OutputSchema before the SDK processes it, we bypass the SDK's own
+// schema generation (which would re-introduce the boolean form).
+func fixBooleanSchemas[T any](t *sdkmcp.Tool) {
+	rt := reflect.TypeFor[T]()
+	if rt == reflect.TypeFor[any]() {
+		return
+	}
+	elem := rt
+	if elem.Kind() == reflect.Pointer {
+		elem = elem.Elem()
+	}
+
+	schema, err := jsonschema.ForType(elem, &jsonschema.ForOptions{})
+	if err != nil {
+		return
+	}
+
+	data, err := json.Marshal(schema)
+	if err != nil {
+		return
+	}
+
+	var m map[string]any
+	if err := json.Unmarshal(data, &m); err != nil {
+		return
+	}
+
+	if replaceBoolSchemas(m) {
+		t.OutputSchema = m
+	}
+}
+
+// replaceBoolSchemas recursively walks a JSON Schema map and replaces boolean
+// true values in schema positions with empty objects. Returns true if any
+// replacement was made.
+//
+// In JSON Schema, true and {} are semantically equivalent (both accept any value),
+// but the MCP protocol requires schema objects rather than booleans.
+func replaceBoolSchemas(m map[string]any) bool {
+	changed := false
+
+	// properties: map of property name → sub-schema
+	if props, ok := m["properties"].(map[string]any); ok {
+		for k, v := range props {
+			switch val := v.(type) {
+			case bool:
+				if val {
+					props[k] = map[string]any{}
+					changed = true
+				}
+			case map[string]any:
+				if replaceBoolSchemas(val) {
+					changed = true
+				}
+			}
+		}
+	}
+
+	// Single sub-schema keywords
+	for _, kw := range []string{
+		"additionalProperties", "items", "additionalItems", "contains",
+		"not", "if", "then", "else", "unevaluatedProperties", "unevaluatedItems",
+		"propertyNames",
+	} {
+		switch val := m[kw].(type) {
+		case bool:
+			if val {
+				m[kw] = map[string]any{}
+				changed = true
+			}
+		case map[string]any:
+			if replaceBoolSchemas(val) {
+				changed = true
+			}
+		}
+	}
+
+	// Array-of-schemas keywords
+	for _, kw := range []string{"anyOf", "allOf", "oneOf", "prefixItems"} {
+		if arr, ok := m[kw].([]any); ok {
+			for i, elem := range arr {
+				switch val := elem.(type) {
+				case bool:
+					if val {
+						arr[i] = map[string]any{}
+						changed = true
+					}
+				case map[string]any:
+					if replaceBoolSchemas(val) {
+						changed = true
+					}
+				}
+			}
+		}
+	}
+
+	// patternProperties: map of pattern → sub-schema
+	if pp, ok := m["patternProperties"].(map[string]any); ok {
+		for k, v := range pp {
+			switch val := v.(type) {
+			case bool:
+				if val {
+					pp[k] = map[string]any{}
+					changed = true
+				}
+			case map[string]any:
+				if replaceBoolSchemas(val) {
+					changed = true
+				}
+			}
+		}
+	}
+
+	return changed
 }
 
 // rawMessageType is the reflect.Type for json.RawMessage.

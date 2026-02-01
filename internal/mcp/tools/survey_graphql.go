@@ -101,7 +101,7 @@ func ToolSurveyGraphQL(d *Deps) func(ctx context.Context, req *sdkmcp.CallToolRe
 		searchResp, err := d.Search.Search(ctx, &types.SearchRequest{
 			SessionID: sessionID,
 			Filters:   searchFilters,
-			Limit:     graphqlSearchLimit,
+			Limit:     d.Config.MaxSearchResults,
 		})
 		if err != nil {
 			return nil, SurveyGraphQLOutput{}, WrapPowHTTPError(err)
@@ -271,6 +271,9 @@ func ToolSurveyGraphQL(d *Deps) func(ctx context.Context, req *sdkmcp.CallToolRe
 			Clusters: clusters,
 			Summary:  summary,
 		}
-		return hybridResult(renderOperationsText(clusters, summary), out), SurveyGraphQLOutput{}, nil
+		if searchResp.Capped {
+			out.Hint = fmt.Sprintf("Search capped at %d POST requests. Use scope.host to narrow, or set MAX_SEARCH_RESULTS to increase.", d.Config.MaxSearchResults)
+		}
+		return hybridResult(renderOperationsText(clusters, summary), out), out, nil
 	}
 }

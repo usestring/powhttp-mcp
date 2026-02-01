@@ -42,7 +42,7 @@ func newFixture(bodyIndex bool) *testFixture {
 	return &testFixture{
 		idx:    idx,
 		cache:  ec,
-		engine: New(idx, ec),
+		engine: New(idx, ec, cfg),
 	}
 }
 
@@ -407,7 +407,7 @@ func TestApplyPostFilters_BodyContains(t *testing.T) {
 func TestApplyPostFilters_BodyContains_NilCache(t *testing.T) {
 	cfg := &config.Config{}
 	idx := indexer.New(nil, nil, cfg) // nil cache
-	engine := New(idx, nil)           // nil cache
+	engine := New(idx, nil, cfg)      // nil cache
 
 	e := makeEntry("e1", "https://a.com/", "GET", 200, 1000)
 	idx.Index(e)
@@ -431,7 +431,7 @@ func TestApplyPostFilters_BodyContains_CacheMiss(t *testing.T) {
 	// Let's create a scenario where cache doesn't have the entry
 	// by creating a fresh cache and a new engine
 	freshCache := newTestCache()
-	engine := New(f.idx, freshCache) // fresh cache without entries
+	engine := New(f.idx, freshCache, &config.Config{}) // fresh cache without entries
 
 	all := f.idx.AllDocIDs()
 	result := engine.applyPostFilters(all, &types.SearchFilters{

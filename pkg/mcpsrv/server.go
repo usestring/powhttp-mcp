@@ -76,7 +76,7 @@ func NewServer(c *client.Client, opts ...Option) (*Server, error) {
 	clusterStore := catalog.NewClusterStore()
 
 	// Create engines
-	searchEngine := search.New(idx, entryCache)
+	searchEngine := search.New(idx, entryCache, cfg.config)
 	fpEngine := compare.NewFingerprintEngine(c, entryCache, cfg.config)
 	diffEngine := compare.NewDiffEngine(fpEngine)
 	clusterEngine := catalog.NewClusterEngine(idx, cfg.config, clusterStore)

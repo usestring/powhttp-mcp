@@ -5,7 +5,7 @@ type SearchRequest struct {
 	SessionID string         // Session to search within
 	Query     string         // Free text query
 	Filters   *SearchFilters // Optional structured filters
-	Limit     int            // Default 20, max 100
+	Limit     int            // Default 20, safety cap via MAX_SEARCH_RESULTS (default 10000)
 	Offset    int            // Pagination offset
 }
 
@@ -50,4 +50,5 @@ type SearchResponse struct {
 	TotalHint  int            `json:"total_hint,omitempty"`
 	SyncedAtMs int64          `json:"synced_at_ms"`
 	Scope      *SearchScope   `json:"scope,omitempty"`
+	Capped     bool           `json:"-"` // true if results were truncated by safety cap
 }

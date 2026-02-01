@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"log/slog"
 	"sort"
 	"strings"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"github.com/RoaringBitmap/roaring/v2"
 
 	"github.com/usestring/powhttp-mcp/internal/cache"
+	"github.com/usestring/powhttp-mcp/internal/config"
 	"github.com/usestring/powhttp-mcp/internal/indexer"
 	"github.com/usestring/powhttp-mcp/pkg/client"
 	"github.com/usestring/powhttp-mcp/pkg/types"
@@ -21,11 +23,12 @@ import (
 type SearchEngine struct {
 	indexer *indexer.Indexer
 	cache   *cache.EntryCache
+	config  *config.Config
 }
 
 // New creates a new SearchEngine.
-func New(idx *indexer.Indexer, c *cache.EntryCache) *SearchEngine {
-	return &SearchEngine{indexer: idx, cache: c}
+func New(idx *indexer.Indexer, c *cache.EntryCache, cfg *config.Config) *SearchEngine {
+	return &SearchEngine{indexer: idx, cache: c, config: cfg}
 }
 
 // Search executes a search with auto-refresh if stale.
@@ -40,8 +43,11 @@ func (s *SearchEngine) Search(ctx context.Context, req *types.SearchRequest) (*t
 	if limit <= 0 {
 		limit = 20
 	}
-	if limit > 100 {
-		limit = 100
+	capped := false
+	if maxResults := s.config.MaxSearchResults; limit > maxResults {
+		slog.Warn("search results capped", "requested", limit, "cap", maxResults)
+		limit = maxResults
+		capped = true
 	}
 
 	// Plan filters to get candidate bitmap
@@ -97,6 +103,7 @@ func (s *SearchEngine) Search(ctx context.Context, req *types.SearchRequest) (*t
 		TotalHint:  totalHint,
 		SyncedAtMs: s.indexer.LastSyncTime(req.SessionID).UnixMilli(),
 		Scope:      scope,
+		Capped:     capped,
 	}, nil
 }
 

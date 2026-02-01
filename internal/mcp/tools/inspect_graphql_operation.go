@@ -294,7 +294,7 @@ func ToolInspectGraphQLOperation(d *Deps) func(ctx context.Context, req *sdkmcp.
 		}
 		md := renderInspectionText(inspected, errorGroups, errSummary, entryIDs, entriesMatched, renderOpts)
 
-		return hybridResult(md, out), InspectGraphQLOperationOutput{}, nil
+		return hybridResult(md, out), out, nil
 	}
 }
 
