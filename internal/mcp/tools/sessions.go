@@ -11,7 +11,7 @@ type SessionsListInput struct{}
 
 // SessionsListOutput is the output for powhttp_sessions_list.
 type SessionsListOutput struct {
-	Sessions []SessionInfo `json:"sessions"`
+	Sessions []SessionInfo `json:"sessions,omitzero"`
 }
 
 // SessionInfo is a summary of a session.

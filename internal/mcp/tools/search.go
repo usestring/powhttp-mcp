@@ -42,7 +42,7 @@ type SearchEntriesFilters struct {
 
 // SearchEntriesOutput is the output for powhttp_search_entries.
 type SearchEntriesOutput struct {
-	Results       []types.SearchResult `json:"results"`
+	Results       []types.SearchResult `json:"results,omitzero"`
 	TotalHint     int                  `json:"total_hint,omitempty"`
 	SyncedAtMs    int64                `json:"synced_at_ms"`
 	SearchedScope *types.SearchScope   `json:"searched_scope,omitempty"`
