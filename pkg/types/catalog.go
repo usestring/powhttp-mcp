@@ -2,6 +2,25 @@ package types
 
 import "encoding/json"
 
+// EndpointCategory classifies an endpoint cluster by its role.
+type EndpointCategory string
+
+const (
+	CategoryAPI   EndpointCategory = "api"
+	CategoryPage  EndpointCategory = "page"
+	CategoryAsset EndpointCategory = "asset"
+	CategoryData  EndpointCategory = "data"
+	CategoryOther EndpointCategory = "other"
+)
+
+// ClusterStats provides lightweight statistics for a cluster.
+type ClusterStats struct {
+	StatusProfile map[string]int `json:"status_profile"`  // e.g. {"2xx": 95, "4xx": 3}
+	ErrorRate     float64        `json:"error_rate"`       // fraction of non-2xx (0.0-1.0)
+	AvgRespBytes  int            `json:"avg_resp_bytes"`   // average response body size
+	HasAuth       bool           `json:"has_auth"`         // any entry had auth signals
+}
+
 // ClusterKey is the composite key for clustering: host + method + path_template.
 type ClusterKey struct {
 	Host         string
@@ -11,32 +30,42 @@ type ClusterKey struct {
 
 // Cluster represents a single endpoint cluster.
 type Cluster struct {
-	ID              string   `json:"cluster_id"`
-	Host            string   `json:"host"`
-	Method          string   `json:"method"`
-	PathTemplate    string   `json:"path_template"`
-	Count           int      `json:"count"`
-	ExampleEntryIDs []string `json:"example_entry_ids"`
-	ContentTypeHint string   `json:"content_type_hint,omitempty"`
+	ID              string           `json:"cluster_id"`
+	Host            string           `json:"host"`
+	Method          string           `json:"method"`
+	PathTemplate    string           `json:"path_template"`
+	Count           int              `json:"count"`
+	Category        EndpointCategory `json:"category"`
+	Stats           ClusterStats     `json:"stats"`
+	ExampleEntryIDs []string         `json:"example_entry_ids"`
+	ContentTypeHint string           `json:"content_type_hint,omitempty"`
 }
 
 // ExtractRequest contains parameters for cluster extraction.
 type ExtractRequest struct {
 	SessionID string
 	Scope     *ClusterScope
+	Filters   *ClusterFilters
 	Options   *ClusterOptions
 	Limit     int // Default 50, for returned clusters
 	Offset    int
 }
 
-// ClusterScope defines the filtering scope for clustering.
+// ClusterScope defines pre-clustering filters that narrow the input entries.
 type ClusterScope struct {
 	Host         string
+	Method       string // Filter entries by HTTP method before clustering
 	ProcessName  string
 	PID          int
 	TimeWindowMs int64
 	SinceMs      int64
 	UntilMs      int64
+}
+
+// ClusterFilters defines post-clustering filters that narrow the output clusters.
+type ClusterFilters struct {
+	Category EndpointCategory // Filter clusters by category
+	MinCount int              // Minimum requests per cluster
 }
 
 // ClusterOptions defines clustering behavior options.

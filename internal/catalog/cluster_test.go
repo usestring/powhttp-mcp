@@ -1,6 +1,7 @@
 package catalog
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -229,8 +230,8 @@ func TestComputeClusterID(t *testing.T) {
 }
 
 func TestComputeScopeHash(t *testing.T) {
-	t.Run("nil scope returns default", func(t *testing.T) {
-		result := computeScopeHash(nil)
+	t.Run("nil scope and filters returns default", func(t *testing.T) {
+		result := computeScopeHash(nil, nil)
 		assert.Equal(t, "default", result)
 	})
 
@@ -241,6 +242,7 @@ func TestComputeScopeHash(t *testing.T) {
 		}{
 			{"empty scope", &types.ClusterScope{}},
 			{"scope with host", &types.ClusterScope{Host: "api.example.com"}},
+			{"scope with method", &types.ClusterScope{Method: "POST"}},
 			{"scope with process", &types.ClusterScope{ProcessName: "chrome", PID: 12345}},
 			{"scope with time window", &types.ClusterScope{TimeWindowMs: 60000}},
 			{"scope with time range", &types.ClusterScope{SinceMs: 1000000, UntilMs: 2000000}},
@@ -248,11 +250,21 @@ func TestComputeScopeHash(t *testing.T) {
 
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
-				result := computeScopeHash(tt.scope)
+				result := computeScopeHash(tt.scope, nil)
 				assert.NotEqual(t, "default", result, "should not return default for non-nil scope")
 				assert.Len(t, result, 16, "should be 16 characters")
 			})
 		}
+	})
+
+	t.Run("filters affect hash", func(t *testing.T) {
+		hash1 := computeScopeHash(nil, &types.ClusterFilters{Category: types.CategoryAPI})
+		hash2 := computeScopeHash(nil, &types.ClusterFilters{Category: types.CategoryAsset})
+		assert.NotEqual(t, hash1, hash2, "different categories should produce different hashes")
+
+		hash3 := computeScopeHash(nil, &types.ClusterFilters{MinCount: 5})
+		hash4 := computeScopeHash(nil, &types.ClusterFilters{MinCount: 10})
+		assert.NotEqual(t, hash3, hash4, "different min_count should produce different hashes")
 	})
 
 	t.Run("determinism", func(t *testing.T) {
@@ -263,8 +275,8 @@ func TestComputeScopeHash(t *testing.T) {
 			TimeWindowMs: 60000,
 		}
 
-		hash1 := computeScopeHash(scope)
-		hash2 := computeScopeHash(scope)
+		hash1 := computeScopeHash(scope, nil)
+		hash2 := computeScopeHash(scope, nil)
 
 		assert.Equal(t, hash1, hash2, "should be deterministic")
 	})
@@ -273,9 +285,127 @@ func TestComputeScopeHash(t *testing.T) {
 		scope1 := &types.ClusterScope{Host: "api1.example.com"}
 		scope2 := &types.ClusterScope{Host: "api2.example.com"}
 
-		hash1 := computeScopeHash(scope1)
-		hash2 := computeScopeHash(scope2)
+		hash1 := computeScopeHash(scope1, nil)
+		hash2 := computeScopeHash(scope2, nil)
 
 		assert.NotEqual(t, hash1, hash2, "different scopes should generate different hashes")
+	})
+
+	t.Run("method affects hash", func(t *testing.T) {
+		scope1 := &types.ClusterScope{Host: "api.example.com", Method: "GET"}
+		scope2 := &types.ClusterScope{Host: "api.example.com", Method: "POST"}
+
+		hash1 := computeScopeHash(scope1, nil)
+		hash2 := computeScopeHash(scope2, nil)
+
+		assert.NotEqual(t, hash1, hash2, "different methods should generate different hashes")
+	})
+}
+
+func TestStatusBucket(t *testing.T) {
+	tests := []struct {
+		code     int
+		expected string
+	}{
+		{100, "1xx"},
+		{101, "1xx"},
+		{200, "2xx"},
+		{201, "2xx"},
+		{204, "2xx"},
+		{301, "3xx"},
+		{302, "3xx"},
+		{400, "4xx"},
+		{401, "4xx"},
+		{404, "4xx"},
+		{500, "5xx"},
+		{502, "5xx"},
+		{0, "other"},
+		{99, "other"},
+		{600, "other"},
+	}
+
+	for _, tt := range tests {
+		t.Run(fmt.Sprintf("status_%d", tt.code), func(t *testing.T) {
+			assert.Equal(t, tt.expected, statusBucket(tt.code))
+		})
+	}
+}
+
+func TestComputeClusterStats(t *testing.T) {
+	t.Run("all success", func(t *testing.T) {
+		b := &clusterBuilder{
+			entryIDs:       make([]string, 10),
+			statusCounts:   map[int]int{200: 10},
+			totalRespBytes: 40960,
+			hasAuth:        false,
+		}
+		stats := computeClusterStats(b)
+		assert.Equal(t, map[string]int{"2xx": 10}, stats.StatusProfile)
+		assert.Equal(t, 0.0, stats.ErrorRate)
+		assert.Equal(t, 4096, stats.AvgRespBytes)
+		assert.False(t, stats.HasAuth)
+	})
+
+	t.Run("mixed statuses", func(t *testing.T) {
+		b := &clusterBuilder{
+			entryIDs:       make([]string, 100),
+			statusCounts:   map[int]int{200: 90, 404: 5, 500: 3, 301: 2},
+			totalRespBytes: 100000,
+			hasAuth:        true,
+		}
+		stats := computeClusterStats(b)
+		assert.Equal(t, 90, stats.StatusProfile["2xx"])
+		assert.Equal(t, 5, stats.StatusProfile["4xx"])
+		assert.Equal(t, 3, stats.StatusProfile["5xx"])
+		assert.Equal(t, 2, stats.StatusProfile["3xx"])
+		assert.InDelta(t, 0.10, stats.ErrorRate, 0.001)
+		assert.Equal(t, 1000, stats.AvgRespBytes)
+		assert.True(t, stats.HasAuth)
+	})
+
+	t.Run("empty builder", func(t *testing.T) {
+		b := &clusterBuilder{
+			entryIDs:     []string{},
+			statusCounts: map[int]int{},
+		}
+		stats := computeClusterStats(b)
+		assert.Equal(t, 0.0, stats.ErrorRate)
+		assert.Equal(t, 0, stats.AvgRespBytes)
+		assert.NotNil(t, stats.StatusProfile)
+	})
+}
+
+func TestApplyPostClusterFilters(t *testing.T) {
+	builders := []*clusterBuilder{
+		{key: types.ClusterKey{Host: "a.com", Method: "GET", PathTemplate: "/api/users"}, entryIDs: make([]string, 50), category: types.CategoryAPI},
+		{key: types.ClusterKey{Host: "a.com", Method: "GET", PathTemplate: "/style.css"}, entryIDs: make([]string, 10), category: types.CategoryAsset},
+		{key: types.ClusterKey{Host: "a.com", Method: "GET", PathTemplate: "/about"}, entryIDs: make([]string, 3), category: types.CategoryPage},
+		{key: types.ClusterKey{Host: "a.com", Method: "GET", PathTemplate: "/data.csv"}, entryIDs: make([]string, 1), category: types.CategoryData},
+	}
+
+	t.Run("nil filters returns all", func(t *testing.T) {
+		result := applyPostClusterFilters(builders, nil)
+		assert.Len(t, result, 4)
+	})
+
+	t.Run("filter by category", func(t *testing.T) {
+		result := applyPostClusterFilters(builders, &types.ClusterFilters{Category: types.CategoryAPI})
+		assert.Len(t, result, 1)
+		assert.Equal(t, types.CategoryAPI, result[0].category)
+	})
+
+	t.Run("filter by min_count", func(t *testing.T) {
+		result := applyPostClusterFilters(builders, &types.ClusterFilters{MinCount: 5})
+		assert.Len(t, result, 2) // 50 and 10
+	})
+
+	t.Run("combined filters", func(t *testing.T) {
+		result := applyPostClusterFilters(builders, &types.ClusterFilters{Category: types.CategoryAPI, MinCount: 5})
+		assert.Len(t, result, 1)
+	})
+
+	t.Run("no matches", func(t *testing.T) {
+		result := applyPostClusterFilters(builders, &types.ClusterFilters{MinCount: 100})
+		assert.Len(t, result, 0)
 	})
 }
