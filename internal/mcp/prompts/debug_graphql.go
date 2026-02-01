@@ -39,9 +39,9 @@ func HandleDebugGraphQL(cfg *Config) func(ctx context.Context, req *sdkmcp.GetPr
 
 		// 3. Context Usage Guide
 		sb.WriteString("## Context Usage Guide\n\n")
-		sb.WriteString("- **powhttp_graphql_operations**: Low cost -- returns operation clusters and traffic summary\n")
-		sb.WriteString("- **powhttp_graphql_inspect**: Medium cost -- returns schemas and field stats for specific operations\n")
-		sb.WriteString("- **powhttp_graphql_errors**: Medium cost -- returns error details with partial/full failure classification\n")
+		sb.WriteString("- **powhttp_survey_graphql**: Low cost -- returns operation clusters and traffic summary\n")
+		sb.WriteString("- **powhttp_inspect_graphql_operation**: Medium cost -- returns schemas, field stats, and errors for a specific operation. Use `sections` to request only what you need.\n")
+		sb.WriteString("- **GraphQL resources** (`powhttp://graphql/{session}/{operation}/{aspect}`): On-demand full data for query, response-schema, field-stats, errors\n")
 		sb.WriteString("- **powhttp_query_body**: Use for extracting specific values after inspecting schemas\n")
 		sb.WriteString("- **powhttp_get_entry**: Use sparingly -- only when you need full raw body content\n\n")
 
@@ -49,13 +49,14 @@ func HandleDebugGraphQL(cfg *Config) func(ctx context.Context, req *sdkmcp.GetPr
 		sb.WriteString("## Workflow Steps\n\n")
 
 		if operation != "" {
-			// Skip survey step -- go directly to inspect + errors
-			sb.WriteString("1. **Inspect target operation** -- Get schema details\n")
+			// Skip survey step -- go directly to inspect
+			sb.WriteString("1. **Inspect target operation** -- Get schema details and errors in one call\n")
 			sb.WriteString("   - Examine variables_schema and response_schema\n")
-			sb.WriteString("   - Review field_stats for frequency and type information\n\n")
-			sb.WriteString("2. **Check for errors** -- Find failures in this operation\n")
-			sb.WriteString("   - Look for partial failures (data + errors) vs full failures (null data)\n")
-			sb.WriteString("   - Check error messages and paths for root cause\n\n")
+			sb.WriteString("   - Review field_stats for frequency and type information\n")
+			sb.WriteString("   - Check error_groups for partial failures (data + errors) vs full failures (null data)\n\n")
+			sb.WriteString("2. **Drill into specifics** -- Use sections to narrow focus\n")
+			sb.WriteString("   - Use `sections=[\"errors\"]` if you only need error analysis\n")
+			sb.WriteString("   - Use `sections=[\"query\", \"variables\"]` to focus on the request shape\n\n")
 			sb.WriteString("3. **Extract specific values** -- Drill into response data\n")
 			sb.WriteString("   - Use powhttp_query_body to extract specific fields based on the schema\n\n")
 		} else {
@@ -63,15 +64,11 @@ func HandleDebugGraphQL(cfg *Config) func(ctx context.Context, req *sdkmcp.GetPr
 			sb.WriteString("   - Review operation_clusters: name, type, count, error_count\n")
 			sb.WriteString("   - High error_count operations need attention first\n")
 			sb.WriteString("   - High count operations are core API surface\n\n")
-			sb.WriteString("2. **Inspect key operations** -- Get schema details for important operations\n")
-			sb.WriteString("   - Examine variables_schema to understand inputs\n")
-			sb.WriteString("   - Examine response_schema to understand outputs\n")
-			sb.WriteString("   - Review field_stats for frequency and type information\n\n")
-			sb.WriteString("3. **Check for errors** -- Find and classify failures\n")
-			sb.WriteString("   - Partial failures: data present but errors also returned\n")
-			sb.WriteString("   - Full failures: null data with errors\n")
-			sb.WriteString("   - Check error messages, paths, and extensions\n\n")
-			sb.WriteString("4. **Extract specific values** -- Drill into response data\n")
+			sb.WriteString("2. **Inspect key operations** -- Get schema details and errors\n")
+			sb.WriteString("   - One call returns query, variables_schema, response_schema, field_stats, and errors\n")
+			sb.WriteString("   - Use `sections` to request only what you need and save context\n")
+			sb.WriteString("   - Fetch resources for large queries or schemas that exceed inline thresholds\n\n")
+			sb.WriteString("3. **Extract specific values** -- Drill into response data\n")
 			sb.WriteString("   - Use powhttp_query_body for targeted extraction\n\n")
 		}
 
@@ -81,25 +78,23 @@ func HandleDebugGraphQL(cfg *Config) func(ctx context.Context, req *sdkmcp.GetPr
 
 		if operation != "" {
 			// Direct operation inspection
-			sb.WriteString("# Step 1: Inspect the target operation\n")
-			fmt.Fprintf(&sb, "powhttp_graphql_inspect(operation_name=%q)\n\n", operation)
-			sb.WriteString("# Step 2: Check for errors\n")
-			fmt.Fprintf(&sb, "powhttp_graphql_errors(operation_name=%q)\n\n", operation)
+			sb.WriteString("# Step 1: Inspect the target operation (schema + errors)\n")
+			fmt.Fprintf(&sb, "powhttp_inspect_graphql_operation(operation_name=%q)\n\n", operation)
+			sb.WriteString("# Step 2: Focus on errors only (if needed)\n")
+			fmt.Fprintf(&sb, "powhttp_inspect_graphql_operation(operation_name=%q, sections=[\"errors\"])\n\n", operation)
 			sb.WriteString("# Step 3: Extract specific values (use entry_ids from inspect results)\n")
 			sb.WriteString("powhttp_query_body(entry_ids=[...], expression=\".data\")\n")
 		} else {
 			// Full workflow
 			sb.WriteString("# Step 1: Survey all operations\n")
 			if host != "" {
-				fmt.Fprintf(&sb, "powhttp_graphql_operations(scope={host: %q})\n\n", host)
+				fmt.Fprintf(&sb, "powhttp_survey_graphql(scope={host: %q})\n\n", host)
 			} else {
-				sb.WriteString("powhttp_graphql_operations()\n\n")
+				sb.WriteString("powhttp_survey_graphql()\n\n")
 			}
-			sb.WriteString("# Step 2: Inspect a specific operation\n")
-			sb.WriteString("powhttp_graphql_inspect(operation_name=\"<name from step 1>\")\n\n")
-			sb.WriteString("# Step 3: Check for errors\n")
-			sb.WriteString("powhttp_graphql_errors(operation_name=\"<name>\")\n\n")
-			sb.WriteString("# Step 4: Extract specific response values\n")
+			sb.WriteString("# Step 2: Inspect a specific operation (schema + errors in one call)\n")
+			sb.WriteString("powhttp_inspect_graphql_operation(operation_name=\"<name from step 1>\")\n\n")
+			sb.WriteString("# Step 3: Extract specific response values\n")
 			sb.WriteString("powhttp_query_body(entry_ids=[...], expression=\".data.users[].name\")\n")
 		}
 		sb.WriteString("```\n\n")
@@ -115,7 +110,7 @@ func HandleDebugGraphQL(cfg *Config) func(ctx context.Context, req *sdkmcp.GetPr
 		// 7. Error Recovery
 		sb.WriteString("## If Things Go Wrong\n\n")
 		sb.WriteString("- **No GraphQL traffic found?** Check `powhttp_sessions_list` to verify traffic was captured. The endpoint may use a custom path -- set scope.path to override.\n")
-		sb.WriteString("- **Operation not found?** Run `powhttp_graphql_operations()` first to list all available operation names.\n")
+		sb.WriteString("- **Operation not found?** Run `powhttp_survey_graphql()` first to list all available operation names.\n")
 		sb.WriteString("- **Empty schemas?** The operation may use GET requests or non-JSON bodies. Check `powhttp_search_entries(filters={path_contains: \"graphql\"})`.\n")
 		sb.WriteString("- **No errors but unexpected behavior?** Use `powhttp_query_body` to inspect actual response data values.\n\n")
 

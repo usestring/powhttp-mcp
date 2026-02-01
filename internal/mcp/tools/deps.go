@@ -37,8 +37,12 @@ type Deps struct {
 
 	// GraphQLParseCache caches parsed GraphQL request bodies by entry ID,
 	// avoiding redundant fetch+decode+parse across tool calls (e.g.,
-	// graphql_operations → graphql_inspect → graphql_errors on same entries).
+	// survey_graphql → inspect_graphql_operation on same entries).
 	GraphQLParseCache sync.Map // entryID → *graphqlParseCacheEntry
+
+	// GraphQLAnalysisCache caches full analysis results by "session:operation_name".
+	// Populated by ToolInspectGraphQLOperation, read by GraphQL resource handlers.
+	GraphQLAnalysisCache sync.Map // "session:operation" → *GraphQLAnalysis
 }
 
 // FetchEntry retrieves an entry by ID, checking the cache first.

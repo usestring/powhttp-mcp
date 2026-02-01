@@ -136,7 +136,9 @@ func scanQuery(query string) (string, string, []string, bool) {
 }
 
 // extractTopLevelFields finds the first '{...}' block and extracts
-// the top-level field names (identifiers at depth 1).
+// the top-level field names (identifiers at brace depth 1).
+// Skips content inside parentheses (arguments) and type names after
+// inline fragment spreads (... on TypeName).
 func extractTopLevelFields(s string) []string {
 	// Find the first opening brace
 	braceStart := strings.IndexByte(s, '{')
@@ -146,26 +148,75 @@ func extractTopLevelFields(s string) []string {
 
 	var fields []string
 	seen := make(map[string]bool)
-	depth := 0
+	braceDepth := 0
+	parenDepth := 0
 	i := braceStart
 
 	for i < len(s) {
 		ch := s[i]
 		switch ch {
 		case '{':
-			depth++
+			braceDepth++
 			i++
 		case '}':
-			depth--
-			if depth == 0 {
+			braceDepth--
+			if braceDepth == 0 {
 				return fields
 			}
 			i++
+		case '(':
+			parenDepth++
+			i++
+		case ')':
+			if parenDepth > 0 {
+				parenDepth--
+			}
+			i++
+		case '#':
+			// Skip line comments
+			for i < len(s) && s[i] != '\n' {
+				i++
+			}
+		case '@':
+			// Skip directive name (e.g., @include, @skip)
+			i++
+			for i < len(s) && isIdentChar(s[i]) {
+				i++
+			}
+		case '.':
+			// Handle spread operator (... or ...on)
+			// Skip "..." and any following "on TypeName"
+			if i+2 < len(s) && s[i+1] == '.' && s[i+2] == '.' {
+				i += 3
+				// Skip whitespace
+				for i < len(s) && (s[i] == ' ' || s[i] == '\t' || s[i] == '\n' || s[i] == '\r') {
+					i++
+				}
+				// Check for "on" keyword (inline fragment)
+				if i+2 < len(s) && s[i] == 'o' && s[i+1] == 'n' && !isIdentChar(s[i+2]) {
+					i += 2
+					// Skip whitespace
+					for i < len(s) && (s[i] == ' ' || s[i] == '\t' || s[i] == '\n' || s[i] == '\r') {
+						i++
+					}
+					// Skip the type name
+					for i < len(s) && isIdentChar(s[i]) {
+						i++
+					}
+				} else {
+					// Named fragment spread: ...FragmentName — skip the name
+					for i < len(s) && isIdentChar(s[i]) {
+						i++
+					}
+				}
+			} else {
+				i++
+			}
 		default:
-			if depth == 1 && (unicode.IsLetter(rune(ch)) || ch == '_') {
+			if braceDepth == 1 && parenDepth == 0 && (unicode.IsLetter(rune(ch)) || ch == '_') {
 				// Read identifier
 				start := i
-				for i < len(s) && (unicode.IsLetter(rune(s[i])) || unicode.IsDigit(rune(s[i])) || s[i] == '_') {
+				for i < len(s) && isIdentChar(s[i]) {
 					i++
 				}
 				fieldName := s[start:i]
@@ -181,6 +232,11 @@ func extractTopLevelFields(s string) []string {
 	}
 
 	return fields
+}
+
+// isIdentChar returns true for characters valid in a GraphQL identifier.
+func isIdentChar(ch byte) bool {
+	return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '_'
 }
 
 // isGraphQLKeyword returns true for GraphQL keywords that should not

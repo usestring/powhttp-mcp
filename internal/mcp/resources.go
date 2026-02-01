@@ -21,6 +21,10 @@ import (
 //   powhttp://diff/{baseline}/{candidate}
 //   powhttp://catalog/{scope_hash}
 //   powhttp://flow/{seed}
+//   powhttp://graphql/{session}/{operation}/query
+//   powhttp://graphql/{session}/{operation}/response-schema
+//   powhttp://graphql/{session}/{operation}/field-stats
+//   powhttp://graphql/{session}/{operation}/errors
 
 // registerResources registers resource templates and handlers.
 func (s *Server) registerResources() {
@@ -90,6 +94,54 @@ func (s *Server) registerResources() {
 			Priority: 0.4,
 		},
 	}, s.handleResourceFlow)
+
+	// GraphQL resources — large artifacts served on demand.
+	// The inspect_graphql_operation tool returns compact summaries; these
+	// resources serve the full data for query, schema, stats, and errors.
+
+	s.mcpServer.AddResourceTemplate(&sdkmcp.ResourceTemplate{
+		URITemplate: "powhttp://graphql/{session}/{operation}/query",
+		Name:        "GraphQL Query",
+		Description: "Full GraphQL query string for an operation. Served from the analysis cache populated by inspect_graphql_operation.",
+		MIMEType:    "text/plain",
+		Annotations: &sdkmcp.Annotations{
+			Audience: []sdkmcp.Role{"assistant"},
+			Priority: 0.5,
+		},
+	}, s.handleResourceGraphQLQuery)
+
+	s.mcpServer.AddResourceTemplate(&sdkmcp.ResourceTemplate{
+		URITemplate: "powhttp://graphql/{session}/{operation}/response-schema",
+		Name:        "GraphQL Response Schema",
+		Description: "Inferred JSON Schema for the GraphQL response. Served from the analysis cache populated by inspect_graphql_operation.",
+		MIMEType:    tools.MimeJSON,
+		Annotations: &sdkmcp.Annotations{
+			Audience: []sdkmcp.Role{"assistant"},
+			Priority: 0.4,
+		},
+	}, s.handleResourceGraphQLResponseSchema)
+
+	s.mcpServer.AddResourceTemplate(&sdkmcp.ResourceTemplate{
+		URITemplate: "powhttp://graphql/{session}/{operation}/field-stats",
+		Name:        "GraphQL Field Stats",
+		Description: "Field-level statistics (frequency, types, enums, examples) for the GraphQL response. Served from the analysis cache populated by inspect_graphql_operation.",
+		MIMEType:    tools.MimeJSON,
+		Annotations: &sdkmcp.Annotations{
+			Audience: []sdkmcp.Role{"assistant"},
+			Priority: 0.3,
+		},
+	}, s.handleResourceGraphQLFieldStats)
+
+	s.mcpServer.AddResourceTemplate(&sdkmcp.ResourceTemplate{
+		URITemplate: "powhttp://graphql/{session}/{operation}/errors",
+		Name:        "GraphQL Errors",
+		Description: "All GraphQL error groups for an operation with messages, paths, extensions, and partial/full failure classification. Served from the analysis cache populated by inspect_graphql_operation.",
+		MIMEType:    tools.MimeJSON,
+		Annotations: &sdkmcp.Annotations{
+			Audience: []sdkmcp.Role{"assistant"},
+			Priority: 0.5,
+		},
+	}, s.handleResourceGraphQLErrors)
 }
 
 // Resource handlers
@@ -272,11 +324,95 @@ func parseResourceURI(uri string) (map[string]string, error) {
 		}
 		params["seed"] = parts[1]
 
+	case "graphql":
+		// powhttp://graphql/{session}/{operation}/{aspect}
+		if len(parts) < 4 {
+			return nil, tools.ErrInvalidInput("graphql URI requires session, operation, and aspect")
+		}
+		params["session"] = parts[1]
+		params["operation"] = parts[2]
+		params["aspect"] = parts[3]
+
 	default:
 		return nil, tools.ErrInvalidInput(fmt.Sprintf("unknown resource type: %s", resourceType))
 	}
 
 	return params, nil
+}
+
+// GraphQL resource handlers
+
+func (s *Server) handleResourceGraphQLQuery(ctx context.Context, req *sdkmcp.ReadResourceRequest) (*sdkmcp.ReadResourceResult, error) {
+	params, err := parseResourceURI(req.Params.URI)
+	if err != nil {
+		return nil, err
+	}
+
+	analysis, err := tools.GetOrRunGraphQLAnalysis(ctx, s.deps, params["session"], params["operation"])
+	if err != nil {
+		return nil, err
+	}
+
+	if analysis.Query == "" {
+		return nil, sdkmcp.ResourceNotFoundError(req.Params.URI)
+	}
+
+	return toTextResourceResult(req.Params.URI, analysis.Query)
+}
+
+func (s *Server) handleResourceGraphQLResponseSchema(ctx context.Context, req *sdkmcp.ReadResourceRequest) (*sdkmcp.ReadResourceResult, error) {
+	params, err := parseResourceURI(req.Params.URI)
+	if err != nil {
+		return nil, err
+	}
+
+	analysis, err := tools.GetOrRunGraphQLAnalysis(ctx, s.deps, params["session"], params["operation"])
+	if err != nil {
+		return nil, err
+	}
+
+	if analysis.ResponseSchema == nil {
+		return nil, sdkmcp.ResourceNotFoundError(req.Params.URI)
+	}
+
+	return toResourceResult(req.Params.URI, analysis.ResponseSchema)
+}
+
+func (s *Server) handleResourceGraphQLFieldStats(ctx context.Context, req *sdkmcp.ReadResourceRequest) (*sdkmcp.ReadResourceResult, error) {
+	params, err := parseResourceURI(req.Params.URI)
+	if err != nil {
+		return nil, err
+	}
+
+	analysis, err := tools.GetOrRunGraphQLAnalysis(ctx, s.deps, params["session"], params["operation"])
+	if err != nil {
+		return nil, err
+	}
+
+	if len(analysis.FieldStats) == 0 {
+		return nil, sdkmcp.ResourceNotFoundError(req.Params.URI)
+	}
+
+	return toResourceResult(req.Params.URI, analysis.FieldStats)
+}
+
+func (s *Server) handleResourceGraphQLErrors(ctx context.Context, req *sdkmcp.ReadResourceRequest) (*sdkmcp.ReadResourceResult, error) {
+	params, err := parseResourceURI(req.Params.URI)
+	if err != nil {
+		return nil, err
+	}
+
+	analysis, err := tools.GetOrRunGraphQLAnalysis(ctx, s.deps, params["session"], params["operation"])
+	if err != nil {
+		return nil, err
+	}
+
+	content := map[string]any{
+		"error_groups": analysis.ErrorGroups,
+		"summary":      analysis.ErrorSummary,
+	}
+
+	return toResourceResult(req.Params.URI, content)
 }
 
 // toResourceResult serializes content to a ReadResourceResult.
@@ -292,6 +428,19 @@ func toResourceResult(uri string, content any) (*sdkmcp.ReadResourceResult, erro
 				URI:      uri,
 				MIMEType: tools.MimeJSON,
 				Text:     string(data),
+			},
+		},
+	}, nil
+}
+
+// toTextResourceResult returns a plain text ReadResourceResult.
+func toTextResourceResult(uri string, text string) (*sdkmcp.ReadResourceResult, error) {
+	return &sdkmcp.ReadResourceResult{
+		Contents: []*sdkmcp.ResourceContents{
+			{
+				URI:      uri,
+				MIMEType: "text/plain",
+				Text:     text,
 			},
 		},
 	}, nil
