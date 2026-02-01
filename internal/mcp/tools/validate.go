@@ -3,7 +3,6 @@ package tools
 import (
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"sort"
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -30,7 +29,7 @@ type ValidateSchemaOutput struct {
 	Summary      ValidationSummary `json:"summary"`
 	Results      []EntryValidation `json:"results,omitzero"`
 	CommonErrors []CommonError     `json:"common_errors,omitempty"`
-	ParsedSchema json.RawMessage   `json:"parsed_schema,omitempty"`
+	ParsedSchema any               `json:"parsed_schema,omitempty"`
 }
 
 // CommonError represents a frequently occurring validation error.

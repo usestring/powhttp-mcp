@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"strings"
 
 	"github.com/google/jsonschema-go/jsonschema"
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -27,6 +28,9 @@ func AddTool[In, Out any](srv *sdkmcp.Server, t *sdkmcp.Tool, h sdkmcp.ToolHandl
 // "type": "array" from the Go type, so null fails schema validation. Adding
 // omitzero to slice fields or initializing them to empty slices fixes this.
 //
+// Also detects json.RawMessage fields, which serialize as transparent JSON but
+// are inferred as []byte (array of integers) by the schema generator.
+//
 // Panics if validation fails. No-ops for the untyped "any" output or if schema
 // inference itself fails (the SDK will report those separately).
 func CheckOutputSchema[T any](toolName string) {
@@ -38,6 +42,18 @@ func CheckOutputSchema[T any](toolName string) {
 	elem := rt
 	if elem.Kind() == reflect.Pointer {
 		elem = elem.Elem()
+	}
+
+	// Check for json.RawMessage fields that would cause schema/runtime mismatch.
+	if paths := findRawMessageFields(elem, nil, make(map[reflect.Type]bool)); len(paths) > 0 {
+		panic(fmt.Sprintf(
+			"AddTool %q: output type %s contains json.RawMessage at %s\n"+
+				"  json.RawMessage serializes as transparent JSON but schema generator infers []byte (array of ints)\n"+
+				"  Fix: change the field type to any (or []any), then convert with types.ToAny:\n"+
+				"    v, err := types.ToAny(typedValue)\n"+
+				"    output.Field = v",
+			toolName, elem, strings.Join(paths, ", "),
+		))
 	}
 
 	schema, err := jsonschema.ForType(elem, &jsonschema.ForOptions{})
@@ -68,4 +84,64 @@ func CheckOutputSchema[T any](toolName string) {
 			toolName, elem, err, data,
 		))
 	}
+}
+
+// rawMessageType is the reflect.Type for json.RawMessage.
+var rawMessageType = reflect.TypeFor[json.RawMessage]()
+
+// findRawMessageFields recursively walks a struct type and returns field paths
+// that use json.RawMessage. This catches schema/runtime mismatches where the
+// schema generator infers []byte but json.Marshal produces arbitrary JSON.
+func findRawMessageFields(t reflect.Type, path []string, visited map[reflect.Type]bool) []string {
+	// Unwrap pointer.
+	for t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+
+	// Direct match: json.RawMessage itself (e.g. element of []json.RawMessage).
+	if t == rawMessageType {
+		return []string{strings.Join(path, ".")}
+	}
+
+	// Prevent infinite recursion on recursive types.
+	if visited[t] {
+		return nil
+	}
+	visited[t] = true
+	defer delete(visited, t)
+
+	var found []string
+
+	switch t.Kind() {
+	case reflect.Struct:
+		for i := range t.NumField() {
+			f := t.Field(i)
+			if !f.IsExported() {
+				continue
+			}
+
+			ft := f.Type
+			// Unwrap pointer for the type check.
+			for ft.Kind() == reflect.Pointer {
+				ft = ft.Elem()
+			}
+
+			fieldPath := append(path, f.Name)
+
+			if ft == rawMessageType {
+				found = append(found, strings.Join(fieldPath, "."))
+				continue
+			}
+
+			found = append(found, findRawMessageFields(ft, fieldPath, visited)...)
+		}
+
+	case reflect.Slice, reflect.Array:
+		found = append(found, findRawMessageFields(t.Elem(), append(path, "[]"), visited)...)
+
+	case reflect.Map:
+		found = append(found, findRawMessageFields(t.Elem(), append(path, "[value]"), visited)...)
+	}
+
+	return found
 }

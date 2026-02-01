@@ -2,6 +2,23 @@
 // These types are used across multiple packages and are designed for external consumption.
 package types
 
+import "encoding/json"
+
+// ToAny round-trips a typed value through JSON to produce an untyped any.
+// Use this when a tool output field must be any (instead of json.RawMessage)
+// to satisfy the MCP SDK's schema validation.
+func ToAny(v any) (any, error) {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return nil, err
+	}
+	var out any
+	if err := json.Unmarshal(b, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // EntrySummary is a compact entry representation for search results.
 type EntrySummary struct {
 	EntryID     string       `json:"entry_id"`

@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -57,5 +58,44 @@ func TestCheckOutputSchema_okWithPointerSlice(t *testing.T) {
 	// Schema allows null for pointer types, so this passes.
 	assert.NotPanics(t, func() {
 		CheckOutputSchema[PtrOutput]("test_ptr_tool")
+	})
+}
+
+func TestCheckOutputSchema_panicsOnRawMessage(t *testing.T) {
+	type BadOutput struct {
+		Data json.RawMessage `json:"data,omitempty"`
+	}
+	assert.Panics(t, func() {
+		CheckOutputSchema[BadOutput]("test_raw_message")
+	})
+}
+
+func TestCheckOutputSchema_panicsOnRawMessageSlice(t *testing.T) {
+	type BadOutput struct {
+		Items []json.RawMessage `json:"items,omitzero"`
+	}
+	assert.Panics(t, func() {
+		CheckOutputSchema[BadOutput]("test_raw_message_slice")
+	})
+}
+
+func TestCheckOutputSchema_panicsOnNestedRawMessage(t *testing.T) {
+	type Inner struct {
+		Schema json.RawMessage `json:"schema,omitempty"`
+	}
+	type BadOutput struct {
+		Nested Inner `json:"nested"`
+	}
+	assert.Panics(t, func() {
+		CheckOutputSchema[BadOutput]("test_nested_raw_message")
+	})
+}
+
+func TestCheckOutputSchema_okWithAnySlice(t *testing.T) {
+	type GoodOutput struct {
+		Items []any `json:"items,omitzero"`
+	}
+	assert.NotPanics(t, func() {
+		CheckOutputSchema[GoodOutput]("test_any_slice")
 	})
 }

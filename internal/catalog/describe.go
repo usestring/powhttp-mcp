@@ -3,7 +3,6 @@ package catalog
 import (
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"net/url"
 	"sort"
@@ -359,11 +358,11 @@ func (d *DescribeEngine) extractBodyShape(entries []*client.SessionEntry, target
 	return result
 }
 
-// marshalShapeResult serializes a shape.Result to json.RawMessage.
+// marshalShapeResult converts a shape.Result to an untyped any for tool output.
 // Returns (nil, nil) if the result is nil.
-func marshalShapeResult(r *shape.Result) (json.RawMessage, error) {
+func marshalShapeResult(r *shape.Result) (any, error) {
 	if r == nil {
 		return nil, nil
 	}
-	return json.Marshal(r)
+	return types.ToAny(r)
 }
