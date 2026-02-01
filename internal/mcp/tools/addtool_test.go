@@ -2,6 +2,7 @@ package tools
 
 import (
 	"encoding/json"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -89,6 +90,49 @@ func TestCheckOutputSchema_panicsOnNestedRawMessage(t *testing.T) {
 	assert.Panics(t, func() {
 		CheckOutputSchema[BadOutput]("test_nested_raw_message")
 	})
+}
+
+func TestCheckOutputSchema_nilSlicePanicShowsFieldPath(t *testing.T) {
+	type Inner struct {
+		Tags []string `json:"tags"` // nil slice, no omitzero
+	}
+	type BadOutput struct {
+		Task Inner `json:"task"`
+	}
+	msg := recoverPanicString(func() {
+		CheckOutputSchema[BadOutput]("test_field_path")
+	})
+	assert.Contains(t, msg, "Task.Tags")
+	assert.Contains(t, msg, "[]string")
+}
+
+func TestCheckOutputSchema_nestedNilSlicePanicShowsFullPath(t *testing.T) {
+	type Level2 struct {
+		IDs []int `json:"ids"` // nil slice, no omitzero
+	}
+	type Level1 struct {
+		Child Level2 `json:"child"`
+	}
+	type BadOutput struct {
+		Parent Level1 `json:"parent"`
+	}
+	msg := recoverPanicString(func() {
+		CheckOutputSchema[BadOutput]("test_deep_path")
+	})
+	assert.Contains(t, msg, "Parent.Child.IDs")
+	assert.Contains(t, msg, "[]int")
+}
+
+// recoverPanicString calls f and returns the panic value as a string.
+// Returns "" if f does not panic.
+func recoverPanicString(f func()) (msg string) {
+	defer func() {
+		if r := recover(); r != nil {
+			msg = fmt.Sprintf("%v", r)
+		}
+	}()
+	f()
+	return ""
 }
 
 func TestCheckOutputSchema_okWithAnySlice(t *testing.T) {

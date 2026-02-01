@@ -77,13 +77,90 @@ func CheckOutputSchema[T any](toolName string) {
 	}
 
 	if err := resolved.Validate(&v); err != nil {
+		fields := findNilDefaultFields(elem, nil, make(map[reflect.Type]bool))
+		var fix string
+		if len(fields) > 0 {
+			fix = "  Nil-defaulting fields:\n"
+			for _, f := range fields {
+				fix += fmt.Sprintf("    %s (%s) — add `omitzero` or `omitempty` to json tag\n", f.path, f.goType)
+			}
+		} else {
+			fix = "  Fix: add `omitzero` to nil-defaulting fields, or use pointers\n"
+		}
 		panic(fmt.Sprintf(
-			"AddTool %q: zero value of output type %s fails schema validation: %v\n"+
-				"  JSON: %s\n"+
-				"  Fix: add `omitzero` to nil-defaulting slice fields, or initialize them to empty slices",
-			toolName, elem, err, data,
+			"AddTool %q: zero value of output type %s fails schema validation:\n%s",
+			toolName, elem, fix,
 		))
 	}
+}
+
+// nilDefaultField describes a struct field that serializes as null in its zero value.
+type nilDefaultField struct {
+	path   string // dotted Go field path, e.g. "Task.Items"
+	goType string // Go type, e.g. "[]string" or "*FeedTask"
+}
+
+// findNilDefaultFields walks a struct type and returns fields whose zero value
+// serializes as null (nil slices, nil maps, nil pointers to structs) and that
+// lack omitzero/omitempty tags. These fields will fail schema validation because
+// the schema expects a concrete type (array/object) but gets null.
+func findNilDefaultFields(t reflect.Type, path []string, visited map[reflect.Type]bool) []nilDefaultField {
+	for t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+	if t.Kind() != reflect.Struct {
+		return nil
+	}
+	if visited[t] {
+		return nil
+	}
+	visited[t] = true
+	defer delete(visited, t)
+
+	var found []nilDefaultField
+	for i := range t.NumField() {
+		f := t.Field(i)
+		if !f.IsExported() {
+			continue
+		}
+
+		// Check if field is omitted when zero/empty.
+		tag := f.Tag.Get("json")
+		if tag == "-" {
+			continue
+		}
+		omits := strings.Contains(tag, "omitzero") || strings.Contains(tag, "omitempty")
+
+		fieldPath := append(path, f.Name)
+		ft := f.Type
+
+		switch {
+		case ft.Kind() == reflect.Slice || ft.Kind() == reflect.Map:
+			if !omits {
+				found = append(found, nilDefaultField{
+					path:   strings.Join(fieldPath, "."),
+					goType: ft.String(),
+				})
+			}
+		case ft.Kind() == reflect.Pointer:
+			if !omits {
+				found = append(found, nilDefaultField{
+					path:   strings.Join(fieldPath, "."),
+					goType: ft.String(),
+				})
+			}
+		}
+
+		// Recurse into struct fields (direct or behind pointer).
+		inner := ft
+		for inner.Kind() == reflect.Pointer {
+			inner = inner.Elem()
+		}
+		if inner.Kind() == reflect.Struct {
+			found = append(found, findNilDefaultFields(inner, fieldPath, visited)...)
+		}
+	}
+	return found
 }
 
 // rawMessageType is the reflect.Type for json.RawMessage.
