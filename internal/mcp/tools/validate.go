@@ -28,7 +28,7 @@ type ValidateSchemaInput struct {
 // ValidateSchemaOutput is the output for powhttp_validate_schema.
 type ValidateSchemaOutput struct {
 	Summary      ValidationSummary `json:"summary"`
-	Results      []EntryValidation `json:"results"`
+	Results      []EntryValidation `json:"results,omitzero"`
 	CommonErrors []CommonError     `json:"common_errors,omitempty"`
 	ParsedSchema json.RawMessage   `json:"parsed_schema,omitempty"`
 }

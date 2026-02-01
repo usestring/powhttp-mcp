@@ -42,7 +42,7 @@ type GraphQLOperationsScope struct {
 
 // GraphQLOperationsOutput is the output for powhttp_graphql_operations.
 type GraphQLOperationsOutput struct {
-	Clusters []graphql.OperationCluster `json:"operation_clusters"`
+	Clusters []graphql.OperationCluster `json:"operation_clusters,omitzero"`
 	Summary  graphql.TrafficSummary     `json:"traffic_summary"`
 	Hint     string                     `json:"hint,omitempty"`
 }
@@ -59,7 +59,7 @@ type GraphQLInspectInput struct {
 
 // GraphQLInspectOutput is the output for powhttp_graphql_inspect.
 type GraphQLInspectOutput struct {
-	Operations      []json.RawMessage `json:"operations"`
+	Operations      []json.RawMessage `json:"operations,omitzero"`
 	EntriesChecked  int               `json:"entries_checked"`
 	EntriesMatched  int               `json:"entries_matched"`
 	Hint            string            `json:"hint,omitempty"`
@@ -77,7 +77,7 @@ type GraphQLErrorsInput struct {
 
 // GraphQLErrorsOutput is the output for powhttp_graphql_errors.
 type GraphQLErrorsOutput struct {
-	ErrorGroups []graphql.ErrorGroup   `json:"error_groups"`
+	ErrorGroups []graphql.ErrorGroup   `json:"error_groups,omitzero"`
 	Summary     graphql.ErrorSummary   `json:"summary"`
 	Hint        string                 `json:"hint,omitempty"`
 }
@@ -147,7 +147,9 @@ func ToolGraphQLOperations(d *Deps) func(ctx context.Context, req *sdkmcp.CallTo
 
 		if len(searchResp.Results) == 0 {
 			return nil, GraphQLOperationsOutput{
-				Hint: "No POST requests found. Try powhttp_extract_endpoints() to see what endpoints exist, or powhttp_search_entries(filters={method: \"POST\"}) to find POST traffic.",
+				Clusters: []graphql.OperationCluster{},
+				Summary:  graphql.TrafficSummary{Hosts: []string{}},
+				Hint:     "No POST requests found. Try powhttp_extract_endpoints() to see what endpoints exist, or powhttp_search_entries(filters={method: \"POST\"}) to find POST traffic.",
 			}, nil
 		}
 
@@ -194,7 +196,9 @@ func ToolGraphQLOperations(d *Deps) func(ctx context.Context, req *sdkmcp.CallTo
 
 		if len(parsed) == 0 {
 			return nil, GraphQLOperationsOutput{
-				Hint: "Found POST requests but none contained valid GraphQL request bodies (JSON with a \"query\" field). Use powhttp_get_entry(entry_id=..., body_mode=\"preview\") to inspect the raw body format, or powhttp_extract_endpoints() to see endpoint patterns.",
+				Clusters: []graphql.OperationCluster{},
+				Summary:  graphql.TrafficSummary{Hosts: []string{}},
+				Hint:     "Found POST requests but none contained valid GraphQL request bodies (JSON with a \"query\" field). Use powhttp_get_entry(entry_id=..., body_mode=\"preview\") to inspect the raw body format, or powhttp_extract_endpoints() to see endpoint patterns.",
 			}, nil
 		}
 
@@ -375,7 +379,10 @@ func ToolGraphQLInspect(d *Deps) func(ctx context.Context, req *sdkmcp.CallToolR
 
 		if len(entryIDs) == 0 {
 			hint := fmt.Sprintf("No entries found for operation %q. Run powhttp_graphql_operations() to see all operation names.", input.OperationName)
-			return nil, GraphQLInspectOutput{Hint: hint}, nil
+			return nil, GraphQLInspectOutput{
+				Operations: []json.RawMessage{},
+				Hint:       hint,
+			}, nil
 		}
 
 		// Inspect each entry
@@ -501,7 +508,10 @@ func ToolGraphQLErrors(d *Deps) func(ctx context.Context, req *sdkmcp.CallToolRe
 
 		if len(entryIDs) == 0 {
 			hint := fmt.Sprintf("No entries found for operation %q. Run powhttp_graphql_operations() to see all operation names.", input.OperationName)
-			return nil, GraphQLErrorsOutput{Hint: hint}, nil
+			return nil, GraphQLErrorsOutput{
+				ErrorGroups: []graphql.ErrorGroup{},
+				Hint:        hint,
+			}, nil
 		}
 
 		// Check each entry for GraphQL errors

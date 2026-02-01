@@ -43,7 +43,7 @@ type QueryEntryResult struct {
 // QueryResponse contains the full response from a body query operation.
 type QueryResponse struct {
 	Summary QuerySummary       `json:"summary"`
-	Values  []any              `json:"values"`
+	Values  []any              `json:"values,omitzero"`
 	Entries []QueryEntryResult `json:"entries,omitempty"`
 	Errors  []string           `json:"errors,omitempty"`
 	Hints   []string           `json:"hints,omitempty"`

@@ -48,7 +48,7 @@ type TrafficSummary struct {
 	BatchedCount   int      `json:"batched_count"`    // Entries that contained batched ops
 	AnonymousCount int      `json:"anonymous_count"`  // Operations without a name
 	UniqueOps      int      `json:"unique_operations"`
-	Hosts          []string `json:"hosts"`
+	Hosts          []string `json:"hosts,omitzero"`
 }
 
 // Error represents a single GraphQL error from a response.

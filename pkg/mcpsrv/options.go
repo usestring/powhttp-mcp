@@ -99,9 +99,9 @@ func WithoutBuiltinPrompts() Option {
 //	mcpsrv.WithTool(&mcp.Tool{Name: "my_tool", Description: "My tool"}, myHandler)
 func WithTool[In, Out any](tool *mcp.Tool, handler func(context.Context, *mcp.CallToolRequest, In) (*mcp.CallToolResult, Out, error)) Option {
 	return func(cfg *serverConfig) {
-		// Store a callback that calls the generic AddTool - preserves type info
+		// Store a callback that calls AddTool with output zero-value check
 		cfg.toolRegistrations = append(cfg.toolRegistrations, func(srv *mcp.Server) {
-			mcp.AddTool(srv, tool, handler)
+			AddTool(srv, tool, handler)
 		})
 	}
 }
@@ -126,7 +126,7 @@ func WithDepsTool[In, Out any](tool *mcp.Tool, builder func(*Deps) func(context.
 	return func(cfg *serverConfig) {
 		cfg.deferredToolRegistrations = append(cfg.deferredToolRegistrations, func(srv *mcp.Server, deps *Deps) {
 			handler := builder(deps)
-			mcp.AddTool(srv, tool, handler)
+			AddTool(srv, tool, handler)
 		})
 	}
 }
