@@ -21,7 +21,7 @@ type SearchEntriesInput struct {
 
 // SearchEntriesFilters contains filter criteria for search.
 type SearchEntriesFilters struct {
-	Host            string `json:"host,omitempty" jsonschema:"Filter by host"`
+	Host            string `json:"host,omitempty" jsonschema:"Filter by host. Prefix with '*.' to include subdomains: '*.example.com' matches example.com, api.example.com, etc. Prefer '*.domain' to capture all related traffic."`
 	PathContains    string `json:"path_contains,omitempty" jsonschema:"Path substring match"`
 	URLContains     string `json:"url_contains,omitempty" jsonschema:"URL substring match"`
 	Method          string `json:"method,omitempty" jsonschema:"HTTP method"`

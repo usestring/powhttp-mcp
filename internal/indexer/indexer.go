@@ -2,6 +2,7 @@ package indexer
 
 import (
 	"encoding/base64"
+	"strings"
 	"sync"
 	"time"
 
@@ -268,11 +269,34 @@ func (idx *Indexer) DocCount() int {
 	return len(idx.docToMeta)
 }
 
-// GetBitmapForHost returns the bitmap for a specific host.
+// GetBitmapForHost returns the bitmap for a host pattern.
+// Supports wildcard prefix: "*.example.com" matches "example.com"
+// and all subdomains like "api.example.com", "www.example.com".
+// Without the prefix, matches exactly.
 func (idx *Indexer) GetBitmapForHost(host string) *roaring.Bitmap {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
-	return idx.idxHost[host]
+
+	if !strings.HasPrefix(host, "*.") {
+		return idx.idxHost[host]
+	}
+
+	baseDomain := host[2:] // safe: HasPrefix guarantees len >= 2
+	if baseDomain == "" {  // handles "*." edge case
+		return nil
+	}
+
+	suffix := "." + baseDomain
+	result := roaring.New()
+	for key, bm := range idx.idxHost {
+		if key == baseDomain || strings.HasSuffix(key, suffix) {
+			result.Or(bm)
+		}
+	}
+	if result.IsEmpty() {
+		return nil
+	}
+	return result
 }
 
 // GetBitmapForMethod returns the bitmap for a specific HTTP method.

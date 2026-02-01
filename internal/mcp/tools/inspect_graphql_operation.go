@@ -22,7 +22,7 @@ type InspectGraphQLOperationInput struct {
 	SessionID     string   `json:"session_id,omitempty" jsonschema:"Session ID (default: active)"`
 	EntryIDs      []string `json:"entry_ids,omitempty" jsonschema:"Entry IDs to inspect. When both entry_ids and operation_name are provided, only the named operation within the given entries is inspected. Either entry_ids or operation_name is required."`
 	OperationName string   `json:"operation_name,omitempty" jsonschema:"GraphQL operation name to find and inspect. Either entry_ids or operation_name is required."`
-	Host          string   `json:"host,omitempty" jsonschema:"Filter search by host (used with operation_name; ignored when entry_ids is provided)"`
+	Host          string   `json:"host,omitempty" jsonschema:"Filter search by host (used with operation_name; ignored when entry_ids is provided). Prefix with '*.' to include subdomains (e.g., '*.example.com'). Prefer '*.domain' to capture all related traffic."`
 	Sections      []string `json:"sections,omitempty" jsonschema:"Which sections to include: query, variables, response_shape, errors. Default: all four."`
 	MaxEntries    int      `json:"max_entries,omitempty" jsonschema:"Max entries to inspect (default: 20, max: 100)"`
 }

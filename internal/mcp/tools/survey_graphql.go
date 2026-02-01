@@ -28,7 +28,7 @@ type SurveyGraphQLInput struct {
 
 // GraphQLOperationsScope defines the filtering scope for GraphQL operations.
 type GraphQLOperationsScope struct {
-	Host         string `json:"host,omitempty" jsonschema:"Filter by host"`
+	Host         string `json:"host,omitempty" jsonschema:"Filter by host. Prefix with '*.' to include subdomains: '*.example.com' matches example.com, api.example.com, etc. Prefer '*.domain' to capture all related traffic."`
 	Path         string `json:"path,omitempty" jsonschema:"Filter by URL path substring. By default, searches all POST requests and validates bodies. Set this to narrow the search to a specific path."`
 	ProcessName  string `json:"process_name,omitempty" jsonschema:"Filter by process name"`
 	PID          int    `json:"pid,omitempty" jsonschema:"Filter by process ID"`

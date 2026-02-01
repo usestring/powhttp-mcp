@@ -107,6 +107,16 @@ func TestPlanFilters_HostFilter(t *testing.T) {
 	assert.Equal(t, uint64(2), result.GetCardinality())
 }
 
+func TestPlanFilters_HostFilter_Wildcard(t *testing.T) {
+	f := newFixture(false)
+	f.addEntry(makeEntry("e1", "https://example.com/a", "GET", 200, 1000))
+	f.addEntry(makeEntry("e2", "https://api.example.com/b", "GET", 200, 2000))
+	f.addEntry(makeEntry("e3", "https://other.com/c", "GET", 200, 3000))
+
+	result := f.engine.planFilters(&types.SearchFilters{Host: "*.example.com"}, "")
+	assert.Equal(t, uint64(2), result.GetCardinality())
+}
+
 func TestPlanFilters_HostFilter_NoMatch(t *testing.T) {
 	f := newFixture(false)
 	f.addEntry(makeEntry("e1", "https://a.com/", "GET", 200, 1000))

@@ -47,7 +47,7 @@ func HandleBuildAPIMap(cfg *Config) func(ctx context.Context, req *sdkmcp.GetPro
 		sb.WriteString("## Workflow Steps\n\n")
 		sb.WriteString("1. **Extract endpoints** - Cluster similar requests into endpoint groups\n")
 		sb.WriteString("   - Start without filters to see overall traffic patterns\n")
-		sb.WriteString("   - Filter by host if targeting specific API\n")
+		sb.WriteString("   - Filter by host if targeting specific API. Use `*.domain` prefix to include subdomains (e.g., scope.host: `*.example.com`)\n")
 		sb.WriteString("   - Filter by process_name if isolating app behavior\n\n")
 		sb.WriteString("2. **Review clusters** - Browse the endpoint catalog\n")
 		sb.WriteString("   - Filter by category: `filters={category: \"api\"}` to focus on structured API endpoints\n")
