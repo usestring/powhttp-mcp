@@ -36,7 +36,7 @@ type OperationCluster struct {
 	ErrorCount   int      `json:"error_count"`             // Requests with GraphQL errors
 	Fields       []string `json:"fields,omitempty"`        // Union of top-level fields across samples
 	HasVariables bool     `json:"has_variables"`           // Any sample used variables
-	EntryIDs     []string `json:"example_entry_ids"`       // Example entry IDs (up to 5)
+	EntryIDs     []string `json:"example_entry_ids,omitzero"` // Example entry IDs (up to 5)
 }
 
 // TrafficSummary summarizes GraphQL traffic across all entries.
@@ -63,7 +63,7 @@ type Error struct {
 type ErrorGroup struct {
 	EntryID        string  `json:"entry_id"`
 	OperationName  string  `json:"operation_name,omitempty"`
-	Errors         []Error `json:"errors"`
+	Errors         []Error `json:"errors,omitzero"`
 	IsPartial      bool    `json:"is_partial"`       // data != null && errors present
 	IsFullFailure  bool    `json:"is_full_failure"`  // data == null && errors present
 }

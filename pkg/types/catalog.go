@@ -14,10 +14,10 @@ const (
 
 // ClusterStats provides lightweight statistics for a cluster.
 type ClusterStats struct {
-	StatusProfile map[string]int `json:"status_profile"`  // e.g. {"2xx": 95, "4xx": 3}
-	ErrorRate     float64        `json:"error_rate"`       // fraction of non-2xx (0.0-1.0)
-	AvgRespBytes  int            `json:"avg_resp_bytes"`   // average response body size
-	HasAuth       bool           `json:"has_auth"`         // any entry had auth signals
+	StatusProfile map[string]int `json:"status_profile,omitzero"` // e.g. {"2xx": 95, "4xx": 3}
+	ErrorRate     float64        `json:"error_rate"`               // fraction of non-2xx (0.0-1.0)
+	AvgRespBytes  int            `json:"avg_resp_bytes"`           // average response body size
+	HasAuth       bool           `json:"has_auth"`                 // any entry had auth signals
 }
 
 // ClusterKey is the composite key for clustering: host + method + path_template.
@@ -36,7 +36,7 @@ type Cluster struct {
 	Count           int              `json:"count"`
 	Category        EndpointCategory `json:"category"`
 	Stats           ClusterStats     `json:"stats"`
-	ExampleEntryIDs []string         `json:"example_entry_ids"`
+	ExampleEntryIDs []string         `json:"example_entry_ids,omitzero"`
 	ContentTypeHint string           `json:"content_type_hint,omitempty"`
 }
 
@@ -96,12 +96,12 @@ type EndpointDescription struct {
 	Method            string             `json:"method"`
 	PathTemplate      string             `json:"path_template"`
 	Count             int                `json:"count"`
-	TypicalHeaders    []HeaderFrequency  `json:"typical_headers"`
+	TypicalHeaders    []HeaderFrequency  `json:"typical_headers,omitzero"`
 	AuthSignals       AuthSignals        `json:"auth_signals"`
 	QueryKeys         QueryKeyAnalysis   `json:"query_keys"`
 	RequestBodyShape  any `json:"request_body_shape,omitempty"`
 	ResponseBodyShape any `json:"response_body_shape,omitempty"`
-	Examples          []ExampleEntry `json:"examples"`
+	Examples          []ExampleEntry `json:"examples,omitzero"`
 }
 
 // HeaderFrequency tracks how often a header appears.
@@ -119,8 +119,8 @@ type AuthSignals struct {
 
 // QueryKeyAnalysis categorizes query parameters.
 type QueryKeyAnalysis struct {
-	Stable   []string `json:"stable"`   // Keys present in most requests
-	Volatile []string `json:"volatile"` // Keys that vary (timestamps, nonces)
+	Stable   []string `json:"stable,omitzero"`   // Keys present in most requests
+	Volatile []string `json:"volatile,omitzero"` // Keys that vary (timestamps, nonces)
 }
 
 // ExampleEntry contains a sample entry from the cluster.

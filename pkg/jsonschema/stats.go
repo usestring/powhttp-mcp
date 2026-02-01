@@ -18,7 +18,7 @@ type FieldStat struct {
 	Required      bool     `json:"required"`                 // Present in all samples and never null
 	Nullable      bool     `json:"nullable"`                 // At least one sample has null for this field
 	DistinctCount int      `json:"distinct_count"`           // Number of distinct non-null values observed
-	Examples      []any    `json:"examples"`                 // Up to 3 example values
+	Examples      []any    `json:"examples,omitzero"`        // Up to 3 example values
 	Format        string   `json:"format,omitempty"`         // Detected format: uuid, iso8601, url, email, enum
 	EnumValues    []string `json:"enum_values,omitempty"`    // All distinct values when format is "enum"
 }
@@ -137,12 +137,19 @@ func computeSingleFieldStat(path string, schema *jsonschema.Schema, fieldName st
 			continue
 		}
 
-		// Track distinct values and examples
+		// Track distinct values and examples.
+		// Skip collecting examples for objects and arrays — child field stats
+		// describe their structure, so embedding full nested values is redundant.
 		key := fmt.Sprintf("%v", val)
 		if !distinctValues[key] {
 			distinctValues[key] = true
-			if len(examples) < maxExamples {
-				examples = append(examples, val)
+			switch val.(type) {
+			case map[string]any, []any:
+				// count distinct but skip example collection
+			default:
+				if len(examples) < maxExamples {
+					examples = append(examples, val)
+				}
 			}
 		}
 
@@ -158,6 +165,9 @@ func computeSingleFieldStat(path string, schema *jsonschema.Schema, fieldName st
 	stat.Required = presentCount == totalSamples && nullCount == 0
 	stat.Nullable = nullCount > 0
 	stat.DistinctCount = len(distinctValues)
+	if examples == nil {
+		examples = []any{}
+	}
 	stat.Examples = examples
 
 	// Format detection for string fields

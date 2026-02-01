@@ -34,7 +34,7 @@ type DisplayRequest struct {
 	Method      *string        `json:"method,omitempty"`
 	Path        *string        `json:"path,omitempty"`
 	HTTPVersion *string        `json:"httpVersion,omitempty"`
-	Headers     client.Headers `json:"headers"`
+	Headers     client.Headers `json:"headers,omitzero"`
 	Body        string         `json:"body,omitempty"` // text content, JSON schema, or placeholder
 }
 
@@ -43,7 +43,7 @@ type DisplayResponse struct {
 	HTTPVersion *string        `json:"httpVersion,omitempty"`
 	StatusCode  *int           `json:"statusCode,omitempty"`
 	StatusText  *string        `json:"statusText,omitempty"`
-	Headers     client.Headers `json:"headers"`
+	Headers     client.Headers `json:"headers,omitzero"`
 	Body        string         `json:"body,omitempty"` // text content, JSON schema, or placeholder
 }
 

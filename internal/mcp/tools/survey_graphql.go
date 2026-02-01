@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/url"
 	"sort"
+	"strings"
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -271,9 +272,29 @@ func ToolSurveyGraphQL(d *Deps) func(ctx context.Context, req *sdkmcp.CallToolRe
 			Clusters: clusters,
 			Summary:  summary,
 		}
+
+		// Build hints
+		var hints []string
 		if searchResp.Capped {
-			out.Hint = fmt.Sprintf("Search capped at %d POST requests. Use scope.host to narrow, or set MAX_SEARCH_RESULTS to increase.", d.Config.MaxSearchResults)
+			hints = append(hints, fmt.Sprintf("Search capped at %d POST requests. Use scope.host to narrow, or set MAX_SEARCH_RESULTS to increase.", d.Config.MaxSearchResults))
 		}
-		return hybridResult(renderOperationsText(clusters, summary), out), out, nil
+		// Flag operations with errors
+		var errorOps []string
+		for _, c := range clusters {
+			if c.ErrorCount > 0 {
+				errorOps = append(errorOps, c.Name)
+			}
+		}
+		if len(errorOps) > 0 {
+			hints = append(hints, fmt.Sprintf("Operations with errors: %s. Use inspect_graphql_operation(operation_name=..., sections=[\"errors\"]) to investigate.", strings.Join(errorOps, ", ")))
+		}
+		if len(clusters) > 0 {
+			hints = append(hints, fmt.Sprintf("Use inspect_graphql_operation(operation_name=%q) for schema and field details.", clusters[0].Name))
+		}
+		if len(hints) > 0 {
+			out.Hint = strings.Join(hints, " ")
+		}
+
+		return nil, out, nil
 	}
 }

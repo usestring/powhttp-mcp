@@ -113,6 +113,13 @@ func TestComputeFieldStats_NestedObjects(t *testing.T) {
 	assert.Contains(t, byPath, "user.name")
 	assert.Equal(t, "object", byPath["user"].Type)
 	assert.Equal(t, "integer", byPath["user.id"].Type)
+
+	// Object fields track distinct count but skip example collection
+	assert.Equal(t, 2, byPath["user"].DistinctCount)
+	assert.Empty(t, byPath["user"].Examples)
+
+	// Leaf fields still have examples
+	assert.NotEmpty(t, byPath["user.id"].Examples)
 }
 
 func TestComputeFieldStats_ArrayItems(t *testing.T) {
@@ -134,6 +141,12 @@ func TestComputeFieldStats_ArrayItems(t *testing.T) {
 	assert.Contains(t, byPath, "items[].id")
 	assert.Contains(t, byPath, "items[].title")
 	assert.Equal(t, "array", byPath["items"].Type)
+
+	// Array fields skip example collection
+	assert.Empty(t, byPath["items"].Examples)
+
+	// Leaf fields within arrays still have examples
+	assert.NotEmpty(t, byPath["items[].id"].Examples)
 }
 
 func TestComputeFieldStats_FormatDetection_UUID(t *testing.T) {
