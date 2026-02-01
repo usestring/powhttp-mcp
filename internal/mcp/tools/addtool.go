@@ -82,7 +82,7 @@ func CheckOutputSchema[T any](toolName string) {
 		if len(fields) > 0 {
 			fix = "  Nil-defaulting fields:\n"
 			for _, f := range fields {
-				fix += fmt.Sprintf("    %s (%s) — add `omitzero` or `omitempty` to json tag\n", f.path, f.goType)
+				fix += fmt.Sprintf("    %s (%s) — add `%s` to json tag\n", f.path, f.goType, f.fix)
 			}
 		} else {
 			fix = "  Fix: add `omitzero` to nil-defaulting fields, or use pointers\n"
@@ -98,6 +98,7 @@ func CheckOutputSchema[T any](toolName string) {
 type nilDefaultField struct {
 	path   string // dotted Go field path, e.g. "Task.Items"
 	goType string // Go type, e.g. "[]string" or "*FeedTask"
+	fix    string // suggested tag fix
 }
 
 // findNilDefaultFields walks a struct type and returns fields whose zero value
@@ -136,17 +137,23 @@ func findNilDefaultFields(t reflect.Type, path []string, visited map[reflect.Typ
 
 		switch {
 		case ft.Kind() == reflect.Slice || ft.Kind() == reflect.Map:
+			// nil slice/map → null; schema expects array/object.
+			// omitzero omits when the value is the zero value (nil for slices/maps).
 			if !omits {
 				found = append(found, nilDefaultField{
 					path:   strings.Join(fieldPath, "."),
 					goType: ft.String(),
+					fix:    "omitzero",
 				})
 			}
 		case ft.Kind() == reflect.Pointer:
+			// nil pointer → null; schema expects the pointed-to type.
+			// omitempty omits when the pointer is nil.
 			if !omits {
 				found = append(found, nilDefaultField{
 					path:   strings.Join(fieldPath, "."),
 					goType: ft.String(),
+					fix:    "omitempty",
 				})
 			}
 		}
