@@ -93,6 +93,99 @@ func CheckOutputSchema[T any](toolName string) {
 			toolName, elem, fix,
 		))
 	}
+
+	// Check struct types inside slice/map/pointer elements. These are invisible
+	// to the zero-value validation above because the container is nil (omitted).
+	// Validates each element type's zero value against its own schema.
+	checkElementTypes(toolName, elem, make(map[reflect.Type]bool))
+}
+
+// checkElementTypes finds struct types reachable through slice, map, and pointer
+// fields and validates their zero values against their inferred schemas. These
+// types are invisible to the top-level zero-value check because the container
+// is nil (omitted via omitempty/omitzero) at zero value.
+func checkElementTypes(toolName string, t reflect.Type, visited map[reflect.Type]bool) {
+	for t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+	if t.Kind() != reflect.Struct || visited[t] {
+		return
+	}
+	visited[t] = true
+
+	for i := range t.NumField() {
+		f := t.Field(i)
+		if !f.IsExported() {
+			continue
+		}
+		tag := f.Tag.Get("json")
+		if tag == "-" {
+			continue
+		}
+
+		ft := f.Type
+		for ft.Kind() == reflect.Pointer {
+			ft = ft.Elem()
+		}
+
+		switch ft.Kind() {
+		case reflect.Slice, reflect.Array:
+			checkElementInner(toolName, f.Name, ft.Elem(), visited)
+		case reflect.Map:
+			checkElementInner(toolName, f.Name, ft.Elem(), visited)
+		case reflect.Struct:
+			checkElementTypes(toolName, ft, visited)
+		}
+	}
+}
+
+// checkElementInner validates a struct element type's zero value and recurses.
+func checkElementInner(toolName, fieldName string, elemType reflect.Type, visited map[reflect.Type]bool) {
+	for elemType.Kind() == reflect.Pointer {
+		elemType = elemType.Elem()
+	}
+	if elemType.Kind() != reflect.Struct {
+		return
+	}
+
+	schema, err := jsonschema.ForType(elemType, &jsonschema.ForOptions{})
+	if err != nil {
+		return
+	}
+	resolved, err := schema.Resolve(&jsonschema.ResolveOptions{})
+	if err != nil {
+		return
+	}
+
+	zero := reflect.Zero(elemType).Interface()
+	data, err := json.Marshal(zero)
+	if err != nil {
+		return
+	}
+
+	var v map[string]any
+	if err := json.Unmarshal(data, &v); err != nil {
+		return
+	}
+
+	if err := resolved.Validate(&v); err != nil {
+		fields := findNilDefaultFields(elemType, nil, make(map[reflect.Type]bool))
+		var fix string
+		if len(fields) > 0 {
+			fix = "  Nil-defaulting fields in " + elemType.String() + ":\n"
+			for _, f := range fields {
+				fix += fmt.Sprintf("    %s (%s) — add `%s` to json tag\n", f.path, f.goType, f.fix)
+			}
+		} else {
+			fix = fmt.Sprintf("  Fix: check %s for nil-defaulting fields\n", elemType)
+		}
+		panic(fmt.Sprintf(
+			"AddTool %q: zero value of element type %s (via field %s) fails schema validation:\n%s",
+			toolName, elemType, fieldName, fix,
+		))
+	}
+
+	checkElementTypes(toolName, elemType, visited)
 }
 
 // nilDefaultField describes a struct field that serializes as null in its zero value.

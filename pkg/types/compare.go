@@ -3,8 +3,8 @@ package types
 // Fingerprint represents a canonical fingerprint for an HTTP entry.
 type Fingerprint struct {
 	Entry              *EntrySummary       `json:"entry"`
-	HeadersOrdered     [][]string          `json:"headers_ordered"`
-	HeadersNormalized  map[string][]string `json:"headers_normalized"`
+	HeadersOrdered     [][]string          `json:"headers_ordered,omitzero"`
+	HeadersNormalized  map[string][]string `json:"headers_normalized,omitzero"`
 	HTTP2PseudoHeaders [][]string          `json:"http2_pseudo_headers,omitempty"`
 	Body               BodyFingerprint     `json:"body"`
 	TLSSummary         *TLSFingerprint     `json:"tls_summary,omitempty"`
@@ -115,14 +115,14 @@ type HTTP2Diff struct {
 // HeaderValueDiff represents a difference in header values.
 type HeaderValueDiff struct {
 	Name      string   `json:"name"`
-	Baseline  []string `json:"baseline"`
-	Candidate []string `json:"candidate"`
+	Baseline  []string `json:"baseline,omitzero"`
+	Candidate []string `json:"candidate,omitzero"`
 }
 
 // HeaderOrderDiff represents differences in header ordering.
 type HeaderOrderDiff struct {
-	BaselineOrder  []string      `json:"baseline_order"`
-	CandidateOrder []string      `json:"candidate_order"`
+	BaselineOrder  []string      `json:"baseline_order,omitzero"`
+	CandidateOrder []string      `json:"candidate_order,omitzero"`
 	Moves          []OrderChange `json:"moves,omitempty"`
 }
 

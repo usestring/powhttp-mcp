@@ -136,6 +136,21 @@ func recoverPanicString(f func()) (msg string) {
 	return ""
 }
 
+func TestCheckOutputSchema_panicsOnNilSliceInSliceElement(t *testing.T) {
+	type Stat struct {
+		Path     string `json:"path"`
+		Examples []any  `json:"examples"` // nil → null at runtime
+	}
+	type Output struct {
+		Stats []Stat `json:"stats,omitempty"`
+	}
+	msg := recoverPanicString(func() {
+		CheckOutputSchema[Output]("test_slice_element_nil")
+	})
+	assert.Contains(t, msg, "Examples")
+	assert.Contains(t, msg, "Stat")
+}
+
 func TestCheckOutputSchema_okWithAnySlice(t *testing.T) {
 	type GoodOutput struct {
 		Items []any `json:"items,omitzero"`
