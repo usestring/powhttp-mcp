@@ -42,7 +42,7 @@ func newFixture(bodyIndex bool) *testFixture {
 	return &testFixture{
 		idx:    idx,
 		cache:  ec,
-		engine: New(idx, ec),
+		engine: New(idx, ec, cfg),
 	}
 }
 
@@ -104,6 +104,16 @@ func TestPlanFilters_HostFilter(t *testing.T) {
 	f.addEntry(makeEntry("e3", "https://other.com/c", "GET", 200, 3000))
 
 	result := f.engine.planFilters(&types.SearchFilters{Host: "api.example.com"}, "")
+	assert.Equal(t, uint64(2), result.GetCardinality())
+}
+
+func TestPlanFilters_HostFilter_Wildcard(t *testing.T) {
+	f := newFixture(false)
+	f.addEntry(makeEntry("e1", "https://example.com/a", "GET", 200, 1000))
+	f.addEntry(makeEntry("e2", "https://api.example.com/b", "GET", 200, 2000))
+	f.addEntry(makeEntry("e3", "https://other.com/c", "GET", 200, 3000))
+
+	result := f.engine.planFilters(&types.SearchFilters{Host: "*.example.com"}, "")
 	assert.Equal(t, uint64(2), result.GetCardinality())
 }
 
@@ -407,7 +417,7 @@ func TestApplyPostFilters_BodyContains(t *testing.T) {
 func TestApplyPostFilters_BodyContains_NilCache(t *testing.T) {
 	cfg := &config.Config{}
 	idx := indexer.New(nil, nil, cfg) // nil cache
-	engine := New(idx, nil)           // nil cache
+	engine := New(idx, nil, cfg)      // nil cache
 
 	e := makeEntry("e1", "https://a.com/", "GET", 200, 1000)
 	idx.Index(e)
@@ -431,7 +441,7 @@ func TestApplyPostFilters_BodyContains_CacheMiss(t *testing.T) {
 	// Let's create a scenario where cache doesn't have the entry
 	// by creating a fresh cache and a new engine
 	freshCache := newTestCache()
-	engine := New(f.idx, freshCache) // fresh cache without entries
+	engine := New(f.idx, freshCache, &config.Config{}) // fresh cache without entries
 
 	all := f.idx.AllDocIDs()
 	result := engine.applyPostFilters(all, &types.SearchFilters{

@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -62,8 +63,9 @@ func ToolInferSchema(d *Deps) func(ctx context.Context, req *sdkmcp.CallToolRequ
 		if maxEntries <= 0 {
 			maxEntries = d.Config.DefaultQueryLimit
 		}
-		if maxEntries > 100 {
-			maxEntries = 100
+		if cap := d.Config.MaxInferEntries; maxEntries > cap {
+			slog.Warn("infer_schema max_entries capped", "requested", maxEntries, "cap", cap)
+			maxEntries = cap
 		}
 		if len(entryIDs) > maxEntries {
 			entryIDs = entryIDs[:maxEntries]

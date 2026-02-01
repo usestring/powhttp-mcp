@@ -73,6 +73,7 @@ func HandleGenerateScraper(cfg *Config) func(ctx context.Context, req *sdkmcp.Ge
 		} else {
 			sb.WriteString("   `powhttp_extract_endpoints()`\n")
 		}
+		sb.WriteString("   Tip: Use `*.domain` prefix to include subdomains (e.g., `*.example.com`)\n")
 		sb.WriteString("1b. **Discover Auth Patterns** (use all three approaches):\n")
 		sb.WriteString("   - `powhttp_describe_endpoint(cluster_id=\"...\")` - Check `auth_signals` for cookies, bearer tokens, custom auth headers\n")
 		sb.WriteString("   - `powhttp_search_entries(filters={header_contains: \"authorization\"})` - Find Bearer/Basic auth across all traffic\n")

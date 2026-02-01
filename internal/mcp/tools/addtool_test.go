@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"testing"
 
+	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -142,4 +143,104 @@ func TestCheckOutputSchema_okWithAnySlice(t *testing.T) {
 	assert.NotPanics(t, func() {
 		CheckOutputSchema[GoodOutput]("test_any_slice")
 	})
+}
+
+func TestReplaceBoolSchemas_propertiesTrue(t *testing.T) {
+	m := map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"shape":   true,
+			"summary": map[string]any{"type": "string"},
+		},
+	}
+	changed := replaceBoolSchemas(m)
+	assert.True(t, changed)
+	props := m["properties"].(map[string]any)
+	assert.Equal(t, map[string]any{}, props["shape"])
+	assert.Equal(t, map[string]any{"type": "string"}, props["summary"])
+}
+
+func TestReplaceBoolSchemas_itemsTrue(t *testing.T) {
+	m := map[string]any{
+		"type":  "array",
+		"items": true,
+	}
+	changed := replaceBoolSchemas(m)
+	assert.True(t, changed)
+	assert.Equal(t, map[string]any{}, m["items"])
+}
+
+func TestReplaceBoolSchemas_additionalPropertiesFalseUntouched(t *testing.T) {
+	m := map[string]any{
+		"type":                 "object",
+		"additionalProperties": false,
+	}
+	changed := replaceBoolSchemas(m)
+	assert.False(t, changed)
+	assert.Equal(t, false, m["additionalProperties"])
+}
+
+func TestReplaceBoolSchemas_nested(t *testing.T) {
+	m := map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"inner": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"data": true,
+				},
+			},
+		},
+	}
+	changed := replaceBoolSchemas(m)
+	assert.True(t, changed)
+	inner := m["properties"].(map[string]any)["inner"].(map[string]any)
+	innerProps := inner["properties"].(map[string]any)
+	assert.Equal(t, map[string]any{}, innerProps["data"])
+}
+
+func TestReplaceBoolSchemas_noChange(t *testing.T) {
+	m := map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"name": map[string]any{"type": "string"},
+		},
+	}
+	changed := replaceBoolSchemas(m)
+	assert.False(t, changed)
+}
+
+func TestFixBooleanSchemas_setsOutputSchema(t *testing.T) {
+	type WithAnyField struct {
+		Shape   any    `json:"shape,omitzero"`
+		Summary string `json:"summary"`
+	}
+
+	tool := &sdkmcp.Tool{Name: "test_tool"}
+	fixBooleanSchemas[WithAnyField](tool)
+
+	assert.NotNil(t, tool.OutputSchema)
+	m, ok := tool.OutputSchema.(map[string]any)
+	assert.True(t, ok)
+	props := m["properties"].(map[string]any)
+	// shape should be {} not true
+	assert.Equal(t, map[string]any{}, props["shape"])
+}
+
+func TestFixBooleanSchemas_noop(t *testing.T) {
+	type SimpleOutput struct {
+		Name string `json:"name"`
+	}
+
+	tool := &sdkmcp.Tool{Name: "test_tool"}
+	fixBooleanSchemas[SimpleOutput](tool)
+
+	// No any fields, so OutputSchema should not be set
+	assert.Nil(t, tool.OutputSchema)
+}
+
+func TestFixBooleanSchemas_noopForAny(t *testing.T) {
+	tool := &sdkmcp.Tool{Name: "test_tool"}
+	fixBooleanSchemas[any](tool)
+	assert.Nil(t, tool.OutputSchema)
 }

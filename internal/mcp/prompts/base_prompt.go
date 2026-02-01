@@ -97,7 +97,7 @@ func HandleBasePrompt(cfg *Config) func(ctx context.Context, req *sdkmcp.GetProm
 
 		sb.WriteString("\n### Debug Anti-Bot Issues\n")
 		sb.WriteString("```\n")
-		sb.WriteString("powhttp_search_entries(filters: {host: \"api.example.com\"}, include_details: true)\n")
+		sb.WriteString("powhttp_search_entries(filters: {host: \"*.example.com\"}, include_details: true)\n")
 		sb.WriteString("powhttp_fingerprint(entry_id)\n")
 		sb.WriteString("```\n")
 
@@ -125,6 +125,7 @@ func HandleBasePrompt(cfg *Config) func(ctx context.Context, req *sdkmcp.GetProm
 
 		// --- Tips ---
 		sb.WriteString("\n## Tips\n")
+		sb.WriteString("- **Wildcard hosts**: Use `*.example.com` to match all subdomains. Prefer this when you want all traffic for a domain.\n")
 		sb.WriteString("- **Filter by category**: `filters.category=\"api\"` skips static assets and pages, focuses on structured API endpoints\n")
 		sb.WriteString("- **Check stats first**: `error_rate` and `has_auth` on clusters help prioritize which endpoints to drill into\n")
 		sb.WriteString("- **Any content type**: `powhttp_query_body` auto-detects the expression language from the content-type\n")

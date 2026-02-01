@@ -22,7 +22,7 @@ type ExtractEndpointsInput struct {
 
 // ExtractEndpointsScope defines pre-clustering filters that narrow input entries.
 type ExtractEndpointsScope struct {
-	Host         string `json:"host,omitempty" jsonschema:"Filter by host"`
+	Host         string `json:"host,omitempty" jsonschema:"Filter by host. Prefix with '*.' to include subdomains: '*.example.com' matches example.com, api.example.com, etc. Prefer '*.domain' to capture all related traffic."`
 	Method       string `json:"method,omitempty" jsonschema:"Filter by HTTP method (e.g., GET, POST). Case-insensitive; applied before clustering."`
 	ProcessName  string `json:"process_name,omitempty" jsonschema:"Filter by process name"`
 	PID          int    `json:"pid,omitempty" jsonschema:"Filter by process ID"`

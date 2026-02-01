@@ -88,9 +88,11 @@ func HandleDebugGraphQL(cfg *Config) func(ctx context.Context, req *sdkmcp.GetPr
 			// Full workflow
 			sb.WriteString("# Step 1: Survey all operations\n")
 			if host != "" {
-				fmt.Fprintf(&sb, "powhttp_survey_graphql(scope={host: %q})\n\n", host)
+				fmt.Fprintf(&sb, "powhttp_survey_graphql(scope={host: %q})\n", host)
+				sb.WriteString("# Tip: Use '*.domain' prefix to include subdomains (e.g., scope.host: '*.example.com')\n\n")
 			} else {
-				sb.WriteString("powhttp_survey_graphql()\n\n")
+				sb.WriteString("powhttp_survey_graphql()\n")
+				sb.WriteString("# Tip: Use scope.host with '*.domain' to include subdomains (e.g., '*.example.com')\n\n")
 			}
 			sb.WriteString("# Step 2: Inspect a specific operation (schema + errors in one call)\n")
 			sb.WriteString("powhttp_inspect_graphql_operation(operation_name=\"<name from step 1>\")\n\n")

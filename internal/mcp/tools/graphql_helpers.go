@@ -35,10 +35,6 @@ func graphqlAnalysisCacheKey(sessionID, operationName string) string {
 	return sessionID + ":" + operationName
 }
 
-// graphqlSearchLimit is the internal search breadth for finding GraphQL entries.
-// Larger than maxEntries to ensure we find target operations even in busy APIs.
-const graphqlSearchLimit = 500
-
 // graphqlParseCacheEntry stores a cached GraphQL parse result for an entry.
 type graphqlParseCacheEntry struct {
 	result *graphql.ParseResult // nil if not a valid GraphQL body
@@ -103,7 +99,7 @@ func resolveGraphQLEntryIDs(ctx context.Context, d *Deps, sessionID string, entr
 			Method: "POST",
 			Host:   host,
 		},
-		Limit: graphqlSearchLimit,
+		Limit: d.Config.MaxSearchResults,
 	})
 	if err != nil {
 		return nil, WrapPowHTTPError(err)

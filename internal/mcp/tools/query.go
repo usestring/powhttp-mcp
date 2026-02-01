@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -74,8 +75,9 @@ func ToolQueryBody(d *Deps) func(ctx context.Context, req *sdkmcp.CallToolReques
 		if maxEntries <= 0 {
 			maxEntries = d.Config.DefaultQueryLimit
 		}
-		if maxEntries > 100 {
-			maxEntries = 100
+		if cap := d.Config.MaxQueryEntries; maxEntries > cap {
+			slog.Warn("query_body max_entries capped", "requested", maxEntries, "cap", cap)
+			maxEntries = cap
 		}
 
 		maxResults := input.MaxResults

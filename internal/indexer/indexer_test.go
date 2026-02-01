@@ -101,19 +101,59 @@ func TestAllDocIDs(t *testing.T) {
 
 func TestBitmapIndexes_Host(t *testing.T) {
 	idx := newTestIndexer(nil)
-	idx.Index(makeEntry("e1", "https://api.example.com/a", "GET", 200))
+	idx.Index(makeEntry("e1", "https://example.com/a", "GET", 200))
 	idx.Index(makeEntry("e2", "https://api.example.com/b", "GET", 200))
-	idx.Index(makeEntry("e3", "https://other.com/c", "GET", 200))
+	idx.Index(makeEntry("e3", "https://www.example.com/c", "GET", 200))
+	idx.Index(makeEntry("e4", "https://other.com/d", "GET", 200))
+	idx.Index(makeEntry("e5", "https://notexample.com/e", "GET", 200))
 
-	bm := idx.GetBitmapForHost("api.example.com")
-	require.NotNil(t, bm)
-	assert.Equal(t, uint64(2), bm.GetCardinality())
+	tests := []struct {
+		name     string
+		host     string
+		wantNil  bool
+		wantCard uint64
+	}{
+		{"exact match", "api.example.com", false, 1},
+		{"exact match base", "example.com", false, 1},
+		{"exact no match", "missing.com", true, 0},
+		{"wildcard matches base and subdomains", "*.example.com", false, 3},
+		{"wildcard excludes unrelated", "*.other.com", false, 1},
+		{"wildcard no match", "*.missing.com", true, 0},
+		{"wildcard does not match notexample.com", "*.example.com", false, 3},
+		{"wildcard empty base", "*.", true, 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			bm := idx.GetBitmapForHost(tt.host)
+			if tt.wantNil {
+				assert.Nil(t, bm)
+			} else {
+				require.NotNil(t, bm)
+				assert.Equal(t, tt.wantCard, bm.GetCardinality())
+			}
+		})
+	}
+}
 
-	bm = idx.GetBitmapForHost("other.com")
-	require.NotNil(t, bm)
-	assert.Equal(t, uint64(1), bm.GetCardinality())
+func TestGetBitmapForHost_WildcardDoesNotMutateIndex(t *testing.T) {
+	idx := newTestIndexer(nil)
+	idx.Index(makeEntry("e1", "https://example.com/a", "GET", 200))
+	idx.Index(makeEntry("e2", "https://api.example.com/b", "GET", 200))
 
-	assert.Nil(t, idx.GetBitmapForHost("missing.com"))
+	// Get the exact bitmap cardinality before wildcard call
+	exactBm := idx.GetBitmapForHost("example.com")
+	require.NotNil(t, exactBm)
+	assert.Equal(t, uint64(1), exactBm.GetCardinality())
+
+	// Wildcard call
+	wildcardBm := idx.GetBitmapForHost("*.example.com")
+	require.NotNil(t, wildcardBm)
+	assert.Equal(t, uint64(2), wildcardBm.GetCardinality())
+
+	// Verify exact bitmap was not mutated
+	exactBm2 := idx.GetBitmapForHost("example.com")
+	require.NotNil(t, exactBm2)
+	assert.Equal(t, uint64(1), exactBm2.GetCardinality())
 }
 
 func TestBitmapIndexes_Method(t *testing.T) {

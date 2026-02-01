@@ -28,7 +28,7 @@ type SurveyGraphQLInput struct {
 
 // GraphQLOperationsScope defines the filtering scope for GraphQL operations.
 type GraphQLOperationsScope struct {
-	Host         string `json:"host,omitempty" jsonschema:"Filter by host"`
+	Host         string `json:"host,omitempty" jsonschema:"Filter by host. Prefix with '*.' to include subdomains: '*.example.com' matches example.com, api.example.com, etc. Prefer '*.domain' to capture all related traffic."`
 	Path         string `json:"path,omitempty" jsonschema:"Filter by URL path substring. By default, searches all POST requests and validates bodies. Set this to narrow the search to a specific path."`
 	ProcessName  string `json:"process_name,omitempty" jsonschema:"Filter by process name"`
 	PID          int    `json:"pid,omitempty" jsonschema:"Filter by process ID"`
@@ -101,7 +101,7 @@ func ToolSurveyGraphQL(d *Deps) func(ctx context.Context, req *sdkmcp.CallToolRe
 		searchResp, err := d.Search.Search(ctx, &types.SearchRequest{
 			SessionID: sessionID,
 			Filters:   searchFilters,
-			Limit:     graphqlSearchLimit,
+			Limit:     d.Config.MaxSearchResults,
 		})
 		if err != nil {
 			return nil, SurveyGraphQLOutput{}, WrapPowHTTPError(err)
@@ -271,6 +271,9 @@ func ToolSurveyGraphQL(d *Deps) func(ctx context.Context, req *sdkmcp.CallToolRe
 			Clusters: clusters,
 			Summary:  summary,
 		}
-		return hybridResult(renderOperationsText(clusters, summary), out), SurveyGraphQLOutput{}, nil
+		if searchResp.Capped {
+			out.Hint = fmt.Sprintf("Search capped at %d POST requests. Use scope.host to narrow, or set MAX_SEARCH_RESULTS to increase.", d.Config.MaxSearchResults)
+		}
+		return hybridResult(renderOperationsText(clusters, summary), out), out, nil
 	}
 }
