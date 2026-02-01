@@ -66,7 +66,7 @@ func Register(srv *sdkmcp.Server, d *Deps) {
 	// Tool 9: powhttp_extract_endpoints
 	AddTool(srv, &sdkmcp.Tool{
 		Name:        "powhttp_extract_endpoints",
-		Description: "Group HTTP entries by endpoint pattern into clusters (e.g., /api/users/{id}). Returns clusters with cluster_id, host, method, path_template, count, category (api/page/asset/data/other), and lightweight stats (status_profile, error_rate, avg_resp_bytes, has_auth). Filter with scope.host, scope.method (pre-clustering), or filters.category, filters.min_count (post-clustering) to narrow results. Pass cluster_id to describe_endpoint, infer_schema, or query_body for deeper analysis. For GraphQL APIs (POST /graphql), use powhttp_graphql_operations instead.",
+		Description: "Group HTTP entries by endpoint pattern into clusters (e.g., /api/users/{id}). Returns clusters with cluster_id, host, method, path_template, count, category (api/page/asset/data/other), and lightweight stats (status_profile, error_rate, avg_resp_bytes, has_auth). Filter with scope.host, scope.method (pre-clustering), or filters.category, filters.min_count (post-clustering) to narrow results. Pass cluster_id to describe_endpoint, infer_schema, or query_body for deeper analysis. For GraphQL APIs (POST /graphql), use powhttp_survey_graphql instead.",
 	}, ToolExtractEndpoints(d))
 
 	// Tool 10: powhttp_describe_endpoint
@@ -99,21 +99,15 @@ func Register(srv *sdkmcp.Server, d *Deps) {
 		Description: "Infer a merged schema from multiple HTTP entry bodies. Returns a shape result keyed by content_category (json, xml, csv, html, form) with format-specific analysis: JSON/YAML get a JSON Schema plus field_stats (frequency, required/optional, formats, enums); other types get structural outlines. Use this tool for deep multi-sample analysis when describe_endpoint's shape overview is insufficient. Requires entry_ids or cluster_id.",
 	}, ToolInferSchema(d))
 
-	// Tool 15: powhttp_graphql_operations
+	// Tool 15: powhttp_survey_graphql
 	AddTool(srv, &sdkmcp.Tool{
-		Name:        "powhttp_graphql_operations",
-		Description: "Cluster GraphQL traffic by operation name and type (query/mutation/subscription). Returns operation clusters with counts, error counts, fields, and example entry IDs, plus a traffic summary. Searches all POST entries and validates request bodies, so it works regardless of endpoint path. Filter by operation_type to see only queries, mutations, or subscriptions. Use this INSTEAD OF extract_endpoints when analyzing GraphQL APIs -- extract_endpoints collapses all GraphQL operations into one cluster. Use graphql_inspect to drill into a specific operation, or graphql_errors to find failures.",
-	}, ToolGraphQLOperations(d))
+		Name:        "powhttp_survey_graphql",
+		Description: "Cluster GraphQL traffic by operation name and type (query/mutation/subscription). Returns operation clusters with counts, error counts, fields, and example entry IDs, plus a traffic summary. Searches all POST entries and validates request bodies, so it works regardless of endpoint path. Filter by operation_type to see only queries, mutations, or subscriptions. Use this INSTEAD OF extract_endpoints when analyzing GraphQL APIs -- extract_endpoints collapses all GraphQL operations into one cluster. Use inspect_graphql_operation to drill into a specific operation's schema and errors.",
+	}, ToolSurveyGraphQL(d))
 
-	// Tool 16: powhttp_graphql_inspect
+	// Tool 16: powhttp_inspect_graphql_operation
 	AddTool(srv, &sdkmcp.Tool{
-		Name:        "powhttp_graphql_inspect",
-		Description: "Parse and inspect individual GraphQL operations. Returns operation details with variables_schema, response_schema, and field statistics. Requires entry_ids or operation_name; omitting both returns an error. Use this to understand what an operation sends and receives. Use graphql_errors instead when looking for failures.",
-	}, ToolGraphQLInspect(d))
-
-	// Tool 17: powhttp_graphql_errors
-	AddTool(srv, &sdkmcp.Tool{
-		Name:        "powhttp_graphql_errors",
-		Description: "Extract and categorize GraphQL errors from responses. Returns error groups with messages, paths, and extensions, plus a summary distinguishing partial failures (data + errors) from full failures (null data + errors). Requires entry_ids or operation_name; omitting both returns an error. Use graphql_inspect instead for operation schema details.",
-	}, ToolGraphQLErrors(d))
+		Name:        "powhttp_inspect_graphql_operation",
+		Description: "Inspect a single GraphQL operation: parse the query, infer variable and response schemas, compute field statistics, and collect errors. Merges schema inspection and error analysis into one call. Use the sections parameter ([\"query\", \"variables\", \"response_shape\", \"errors\"]; default: all) to request only what you need. Returns compact inline summaries plus resource URIs (powhttp://graphql/{session}/{operation}/{aspect}) for full data. Requires entry_ids or operation_name. Use survey_graphql first to discover operation names.",
+	}, ToolInspectGraphQLOperation(d))
 }

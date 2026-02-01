@@ -118,10 +118,10 @@ func HandleBasePrompt(cfg *Config) func(ctx context.Context, req *sdkmcp.GetProm
 		// --- GraphQL APIs ---
 		sb.WriteString("\n## GraphQL APIs\n")
 		sb.WriteString("GraphQL APIs funnel all requests through a single POST endpoint (e.g., /graphql), so `powhttp_extract_endpoints` clusters them as one endpoint. Use the dedicated GraphQL tools instead:\n\n")
-		sb.WriteString("1. **Survey**: `powhttp_graphql_operations(scope={host: ...})` - clusters by operation name/type (the GraphQL equivalent of `powhttp_extract_endpoints`)\n")
-		sb.WriteString("2. **Inspect**: `powhttp_graphql_inspect(operation_name=..., host=...)` - parses variables_schema, response_schema, and field_stats\n")
-		sb.WriteString("3. **Errors**: `powhttp_graphql_errors(operation_name=..., host=...)` - finds partial failures (data + errors) vs full failures (null data)\n")
-		sb.WriteString("\n**Auto-detection**: `powhttp_extract_endpoints` automatically detects GraphQL endpoints by probing request bodies and emits a hint with the host and request count. Follow that hint directly -- call `powhttp_graphql_operations` with the suggested `scope.host`. `powhttp_graphql_operations` validates all POST request bodies regardless of URL path, so it works for custom GraphQL endpoints too -- just call it without a scope to search all POST traffic.\n")
+		sb.WriteString("1. **Survey**: `powhttp_survey_graphql(scope={host: ...})` - clusters by operation name/type (the GraphQL equivalent of `powhttp_extract_endpoints`)\n")
+		sb.WriteString("2. **Inspect**: `powhttp_inspect_graphql_operation(operation_name=..., host=...)` - returns query, variables_schema, response_schema, field_stats, and errors in one call. Use `sections` to request only what you need.\n")
+		sb.WriteString("3. **Resources**: `powhttp://graphql/{session}/{operation}/{aspect}` - fetch full query, response-schema, field-stats, or errors on demand when inline summaries are truncated\n")
+		sb.WriteString("\n**Auto-detection**: `powhttp_extract_endpoints` automatically detects GraphQL endpoints by probing request bodies and emits a hint with the host and request count. Follow that hint directly -- call `powhttp_survey_graphql` with the suggested `scope.host`. `powhttp_survey_graphql` validates all POST request bodies regardless of URL path, so it works for custom GraphQL endpoints too -- just call it without a scope to search all POST traffic.\n")
 
 		// --- Tips ---
 		sb.WriteString("\n## Tips\n")
