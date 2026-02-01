@@ -65,6 +65,18 @@ func HandleBasePrompt(cfg *Config) func(ctx context.Context, req *sdkmcp.GetProm
 		sb.WriteString("  - `schema`: JSON schema only (structure without values)\n")
 		sb.WriteString("  - `full`: Complete body (use sparingly)\n")
 
+		// --- Endpoint Discovery ---
+		sb.WriteString("\n## Endpoint Discovery\n\n")
+		sb.WriteString("After extracting endpoints with `powhttp_extract_endpoints`:\n")
+		sb.WriteString("- Each cluster has a `category` (api, page, asset, data, other) and lightweight `stats` (status_profile, error_rate, avg_resp_bytes, has_auth)\n")
+		sb.WriteString("- Use `filters.category` to focus: `powhttp_extract_endpoints(filters={category: \"api\"})` shows only API endpoints\n")
+		sb.WriteString("- Use `filters.min_count` to filter noise: `filters={min_count: 5}` hides one-off requests\n")
+		sb.WriteString("- Use `scope.method` for pre-clustering filter: `scope={method: \"POST\"}` for write operations\n\n")
+		sb.WriteString("**Quick triage from stats**:\n")
+		sb.WriteString("- `error_rate > 0.1` -> Investigate failures with `powhttp_get_entry`\n")
+		sb.WriteString("- `has_auth: true` -> Check auth patterns with `powhttp_describe_endpoint`\n")
+		sb.WriteString("- `category: \"api\"` + high count -> Core endpoints, prioritize for `infer_schema`\n")
+
 		// --- Recommended Workflows ---
 		sb.WriteString("\n## Recommended Workflows\n")
 
@@ -113,8 +125,9 @@ func HandleBasePrompt(cfg *Config) func(ctx context.Context, req *sdkmcp.GetProm
 
 		// --- Tips ---
 		sb.WriteString("\n## Tips\n")
+		sb.WriteString("- **Filter by category**: `filters.category=\"api\"` skips static assets and pages, focuses on structured API endpoints\n")
+		sb.WriteString("- **Check stats first**: `error_rate` and `has_auth` on clusters help prioritize which endpoints to drill into\n")
 		sb.WriteString("- **Any content type**: `powhttp_query_body` auto-detects the expression language from the content-type\n")
-		sb.WriteString("- **Use clusters**: `powhttp_extract_endpoints` groups similar requests for batch querying\n")
 		sb.WriteString("- **Check `content_type_hint`** on clusters to pick the right expression syntax\n")
 		sb.WriteString("- **Deduplicate**: Set `deduplicate: true` to remove duplicate values\n")
 

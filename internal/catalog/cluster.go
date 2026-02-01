@@ -83,6 +83,7 @@ func (c *ClusterEngine) Extract(ctx context.Context, req *types.ExtractRequest) 
 				key:          key,
 				entryIDs:     make([]string, 0),
 				contentTypes: make(map[string]int),
+				statusCounts: make(map[int]int),
 			}
 			clusterMap[key] = builder
 		}
@@ -90,13 +91,26 @@ func (c *ClusterEngine) Extract(ctx context.Context, req *types.ExtractRequest) 
 		if meta.RespContentType != "" {
 			builder.contentTypes[meta.RespContentType]++
 		}
+		if meta.Status != 0 {
+			builder.statusCounts[meta.Status]++
+		}
+		builder.totalRespBytes += int64(meta.RespBodyBytes)
+		if !builder.hasAuth {
+			if meta.AuthHeader != "" || len(meta.Cookies) > 0 || len(meta.APIKeys) > 0 {
+				builder.hasAuth = true
+			}
+		}
 	}
 
 	// Convert to clusters, respecting MaxClusters
 	builders := make([]*clusterBuilder, 0, len(clusterMap))
 	for _, b := range clusterMap {
+		b.category = classifyCluster(b.key, b.contentTypes)
 		builders = append(builders, b)
 	}
+
+	// Apply post-clustering filters (category, min_count)
+	builders = applyPostClusterFilters(builders, req.Filters)
 
 	// Sort by count descending (most frequent endpoints first)
 	sort.Slice(builders, func(i, j int) bool {
@@ -134,20 +148,14 @@ func (c *ClusterEngine) Extract(ctx context.Context, req *types.ExtractRequest) 
 			Method:          b.key.Method,
 			PathTemplate:    b.key.PathTemplate,
 			Count:           len(b.entryIDs),
+			Category:        b.category,
+			Stats:           computeClusterStats(b),
 			ExampleEntryIDs: examples,
 		}
 
 		// Compute content type hint: most common response content type
 		if len(b.contentTypes) > 0 {
-			var topCT string
-			var topCount int
-			for ct, count := range b.contentTypes {
-				if count > topCount {
-					topCT = ct
-					topCount = count
-				}
-			}
-			cluster.ContentTypeHint = topCT
+			cluster.ContentTypeHint = dominantContentType(b.contentTypes)
 		}
 
 		clusters = append(clusters, cluster)
@@ -155,7 +163,7 @@ func (c *ClusterEngine) Extract(ctx context.Context, req *types.ExtractRequest) 
 		fullEntryIDs[clusterID] = b.entryIDs
 	}
 
-	scopeHash := computeScopeHash(req.Scope)
+	scopeHash := computeScopeHash(req.Scope, req.Filters)
 
 	resp := &types.ExtractResponse{
 		Clusters:   clusters,
@@ -173,9 +181,13 @@ func (c *ClusterEngine) Extract(ctx context.Context, req *types.ExtractRequest) 
 
 // clusterBuilder accumulates entries for a single cluster during extraction.
 type clusterBuilder struct {
-	key          types.ClusterKey
-	entryIDs     []string
-	contentTypes map[string]int
+	key            types.ClusterKey
+	entryIDs       []string
+	contentTypes   map[string]int
+	statusCounts   map[int]int // exact status code -> count
+	totalRespBytes int64       // sum of all response body sizes
+	hasAuth        bool        // any entry had auth signals
+	category       types.EndpointCategory
 }
 
 // applyOptionsDefaults applies default values to ClusterOptions.
@@ -222,6 +234,14 @@ func (c *ClusterEngine) applyScopeFilters(scope *types.ClusterScope) *roaring.Bi
 
 	if scope.Host != "" {
 		if bm := c.indexer.GetBitmapForHost(strings.ToLower(scope.Host)); bm != nil {
+			result = roaring.And(result, bm)
+		} else {
+			return roaring.New()
+		}
+	}
+
+	if scope.Method != "" {
+		if bm := c.indexer.GetBitmapForMethod(strings.ToUpper(scope.Method)); bm != nil {
 			result = roaring.And(result, bm)
 		} else {
 			return roaring.New()
@@ -311,19 +331,107 @@ func computeClusterID(key types.ClusterKey) string {
 	return hex.EncodeToString(hash[:])[:12]
 }
 
-// computeScopeHash creates a hash for the scope (for caching/resource URI).
-func computeScopeHash(scope *types.ClusterScope) string {
-	if scope == nil {
+// applyPostClusterFilters removes clusters that don't match post-clustering filters.
+func applyPostClusterFilters(builders []*clusterBuilder, filters *types.ClusterFilters) []*clusterBuilder {
+	if filters == nil {
+		return builders
+	}
+	if filters.MinCount <= 0 && filters.Category == "" {
+		return builders
+	}
+
+	filtered := make([]*clusterBuilder, 0, len(builders))
+	for _, b := range builders {
+		if filters.MinCount > 0 && len(b.entryIDs) < filters.MinCount {
+			continue
+		}
+		if filters.Category != "" && b.category != filters.Category {
+			continue
+		}
+		filtered = append(filtered, b)
+	}
+	return filtered
+}
+
+// computeClusterStats builds lightweight stats from accumulated builder data.
+func computeClusterStats(b *clusterBuilder) types.ClusterStats {
+	stats := types.ClusterStats{
+		StatusProfile: make(map[string]int),
+		HasAuth:       b.hasAuth,
+	}
+
+	var nonSuccess int
+	total := len(b.entryIDs)
+	for code, count := range b.statusCounts {
+		bucket := statusBucket(code)
+		stats.StatusProfile[bucket] += count
+		if code < 200 || code >= 300 {
+			nonSuccess += count
+		}
+	}
+
+	if total > 0 {
+		stats.ErrorRate = float64(nonSuccess) / float64(total)
+		stats.AvgRespBytes = int(b.totalRespBytes / int64(total))
+	}
+
+	return stats
+}
+
+// statusBucket maps an HTTP status code to its class bucket.
+func statusBucket(code int) string {
+	switch {
+	case code >= 100 && code < 200:
+		return "1xx"
+	case code >= 200 && code < 300:
+		return "2xx"
+	case code >= 300 && code < 400:
+		return "3xx"
+	case code >= 400 && code < 500:
+		return "4xx"
+	case code >= 500 && code < 600:
+		return "5xx"
+	default:
+		return "other"
+	}
+}
+
+// computeScopeHash creates a hash for the scope and filters (for caching/resource URI).
+func computeScopeHash(scope *types.ClusterScope, filters *types.ClusterFilters) string {
+	if scope == nil && filters == nil {
 		return "default"
 	}
 
-	data := fmt.Sprintf("%s\x00%s\x00%d\x00%d\x00%d\x00%d",
-		scope.Host,
-		scope.ProcessName,
-		scope.PID,
-		scope.TimeWindowMs,
-		scope.SinceMs,
-		scope.UntilMs,
+	var host, processName, method string
+	var pid int
+	var timeWindowMs, sinceMs, untilMs int64
+	if scope != nil {
+		host = scope.Host
+		processName = scope.ProcessName
+		pid = scope.PID
+		timeWindowMs = scope.TimeWindowMs
+		sinceMs = scope.SinceMs
+		untilMs = scope.UntilMs
+		method = scope.Method
+	}
+
+	var category string
+	var minCount int
+	if filters != nil {
+		category = string(filters.Category)
+		minCount = filters.MinCount
+	}
+
+	data := fmt.Sprintf("%s\x00%s\x00%d\x00%d\x00%d\x00%d\x00%s\x00%s\x00%d",
+		host,
+		processName,
+		pid,
+		timeWindowMs,
+		sinceMs,
+		untilMs,
+		method,
+		category,
+		minCount,
 	)
 	hash := sha256.Sum256([]byte(data))
 	return hex.EncodeToString(hash[:])[:16]

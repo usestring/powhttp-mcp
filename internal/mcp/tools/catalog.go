@@ -12,21 +12,29 @@ import (
 
 // ExtractEndpointsInput is the input for powhttp_extract_endpoints.
 type ExtractEndpointsInput struct {
-	SessionID string                   `json:"session_id,omitempty" jsonschema:"Session ID (default: active)"`
-	Scope     *ExtractEndpointsScope   `json:"scope,omitempty" jsonschema:"Filtering scope"`
-	Options   *ExtractEndpointsOptions `json:"options,omitempty" jsonschema:"Clustering options"`
-	Limit     int                      `json:"limit,omitempty" jsonschema:"Max clusters to return (default: 50)"`
-	Offset    int                      `json:"offset,omitempty" jsonschema:"Pagination offset"`
+	SessionID string                    `json:"session_id,omitempty" jsonschema:"Session ID (default: active)"`
+	Scope     *ExtractEndpointsScope    `json:"scope,omitempty" jsonschema:"Pre-clustering filters (narrows input entries)"`
+	Filters   *ExtractEndpointsFilters  `json:"filters,omitempty" jsonschema:"Post-clustering filters (narrows output clusters)"`
+	Options   *ExtractEndpointsOptions  `json:"options,omitempty" jsonschema:"Clustering options"`
+	Limit     int                       `json:"limit,omitempty" jsonschema:"Max clusters to return (default: 50)"`
+	Offset    int                       `json:"offset,omitempty" jsonschema:"Pagination offset"`
 }
 
-// ExtractEndpointsScope defines the filtering scope.
+// ExtractEndpointsScope defines pre-clustering filters that narrow input entries.
 type ExtractEndpointsScope struct {
 	Host         string `json:"host,omitempty" jsonschema:"Filter by host"`
+	Method       string `json:"method,omitempty" jsonschema:"Filter by HTTP method (e.g., GET, POST). Case-insensitive; applied before clustering."`
 	ProcessName  string `json:"process_name,omitempty" jsonschema:"Filter by process name"`
 	PID          int    `json:"pid,omitempty" jsonschema:"Filter by process ID"`
 	TimeWindowMs int64  `json:"time_window_ms,omitempty" jsonschema:"Relative time window (ms)"`
 	SinceMs      int64  `json:"since_ms,omitempty" jsonschema:"Unix timestamp (ms) lower bound"`
 	UntilMs      int64  `json:"until_ms,omitempty" jsonschema:"Unix timestamp (ms) upper bound"`
+}
+
+// ExtractEndpointsFilters defines post-clustering filters that narrow output clusters.
+type ExtractEndpointsFilters struct {
+	Category string `json:"category,omitempty" jsonschema:"Filter clusters by endpoint category. Valid values: api, page, asset, data, other"`
+	MinCount int    `json:"min_count,omitempty" jsonschema:"Minimum requests per cluster (filters out low-traffic endpoints)"`
 }
 
 // ExtractEndpointsOptions controls clustering behavior.
@@ -39,7 +47,7 @@ type ExtractEndpointsOptions struct {
 
 // ExtractEndpointsOutput is the output for powhttp_extract_endpoints.
 type ExtractEndpointsOutput struct {
-	Clusters   []types.Cluster    `json:"clusters"`
+	Clusters   []types.Cluster    `json:"clusters,omitzero"`
 	TotalCount int                `json:"total_count"`
 	ScopeHash  string             `json:"scope_hash"`
 	Resource   *types.ResourceRef `json:"resource,omitempty"`
@@ -60,9 +68,22 @@ type DescribeEndpointOutput struct {
 	Hint        string                     `json:"hint,omitempty"`
 }
 
+// validCategories lists the accepted category filter values.
+var validCategories = map[string]bool{
+	"api": true, "page": true, "asset": true, "data": true, "other": true,
+}
+
 // ToolExtractEndpoints extracts endpoint clusters.
 func ToolExtractEndpoints(d *Deps) func(ctx context.Context, req *sdkmcp.CallToolRequest, input ExtractEndpointsInput) (*sdkmcp.CallToolResult, ExtractEndpointsOutput, error) {
 	return func(ctx context.Context, req *sdkmcp.CallToolRequest, input ExtractEndpointsInput) (*sdkmcp.CallToolResult, ExtractEndpointsOutput, error) {
+		// Validate category filter
+		if input.Filters != nil && input.Filters.Category != "" {
+			if !validCategories[input.Filters.Category] {
+				return nil, ExtractEndpointsOutput{}, ErrInvalidInput(
+					fmt.Sprintf("invalid category %q, must be one of: api, page, asset, data, other", input.Filters.Category))
+			}
+		}
+
 		sessionID, err := d.ResolveSessionID(ctx, input.SessionID)
 		if err != nil {
 			return nil, ExtractEndpointsOutput{}, err
@@ -82,11 +103,19 @@ func ToolExtractEndpoints(d *Deps) func(ctx context.Context, req *sdkmcp.CallToo
 		if input.Scope != nil {
 			extractReq.Scope = &types.ClusterScope{
 				Host:         input.Scope.Host,
+				Method:       input.Scope.Method,
 				ProcessName:  input.Scope.ProcessName,
 				PID:          input.Scope.PID,
 				TimeWindowMs: input.Scope.TimeWindowMs,
 				SinceMs:      input.Scope.SinceMs,
 				UntilMs:      input.Scope.UntilMs,
+			}
+		}
+
+		if input.Filters != nil {
+			extractReq.Filters = &types.ClusterFilters{
+				Category: types.EndpointCategory(input.Filters.Category),
+				MinCount: input.Filters.MinCount,
 			}
 		}
 
@@ -105,14 +134,26 @@ func ToolExtractEndpoints(d *Deps) func(ctx context.Context, req *sdkmcp.CallToo
 		}
 
 		// Build helpful hint with concrete values
-		var hint string
+		var hintParts []string
 		if len(resp.Clusters) == 0 {
-			hint = "No endpoints found. Session may be empty or scope filters too restrictive."
+			hintParts = append(hintParts, "No endpoints found. Session may be empty or filters too restrictive.")
 		} else if resp.TotalCount > len(resp.Clusters) {
 			nextOffset := input.Offset + len(resp.Clusters)
-			hint = fmt.Sprintf("Showing %d of %d clusters. Use scope.host to filter, or offset=%d for next page.", len(resp.Clusters), resp.TotalCount, nextOffset)
+			hintParts = append(hintParts, fmt.Sprintf("Showing %d of %d clusters. Use scope.host to filter, or offset=%d for next page.", len(resp.Clusters), resp.TotalCount, nextOffset))
 		} else {
-			hint = fmt.Sprintf("Found %d clusters. Use powhttp_describe_endpoint(cluster_id=...) for schema and examples.", len(resp.Clusters))
+			hintParts = append(hintParts, fmt.Sprintf("Found %d clusters. Use powhttp_describe_endpoint(cluster_id=...) for schema and examples.", len(resp.Clusters)))
+		}
+
+		// Category breakdown when diverse
+		if len(resp.Clusters) > 0 {
+			catCounts := make(map[types.EndpointCategory]int)
+			for _, c := range resp.Clusters {
+				catCounts[c.Category]++
+			}
+			if len(catCounts) > 1 {
+				hintParts = append(hintParts, fmt.Sprintf("Categories: %s.", formatCategoryCounts(catCounts)))
+				hintParts = append(hintParts, "Use filters.category to focus (e.g., filters={category: \"api\"}).")
+			}
 		}
 
 		// Detect GraphQL endpoints by probing a sample entry body from each
@@ -140,11 +181,11 @@ func ToolExtractEndpoints(d *Deps) func(ctx context.Context, req *sdkmcp.CallToo
 		}
 
 		if len(gqlEndpoints) > 0 {
-			hint += fmt.Sprintf(" GraphQL detected: %s.", strings.Join(gqlEndpoints, "; "))
+			hintParts = append(hintParts, fmt.Sprintf("GraphQL detected: %s.", strings.Join(gqlEndpoints, "; ")))
 			if len(gqlEndpoints) == 1 {
-				hint += fmt.Sprintf(" Use powhttp_graphql_operations(scope={host: %q}) for operation-level analysis.", gqlHosts[0])
+				hintParts = append(hintParts, fmt.Sprintf("Use powhttp_graphql_operations(scope={host: %q}) for operation-level analysis.", gqlHosts[0]))
 			} else {
-				hint += " Use powhttp_graphql_operations() for operation-level analysis."
+				hintParts = append(hintParts, "Use powhttp_graphql_operations() for operation-level analysis.")
 			}
 		}
 
@@ -157,9 +198,24 @@ func ToolExtractEndpoints(d *Deps) func(ctx context.Context, req *sdkmcp.CallToo
 				MIME: MimeJSON,
 				Hint: "Fetch for complete endpoint catalog dump",
 			},
-			Hint: hint,
+			Hint: strings.Join(hintParts, " "),
 		}, nil
 	}
+}
+
+// formatCategoryCounts formats category counts as a compact string.
+func formatCategoryCounts(counts map[types.EndpointCategory]int) string {
+	order := []types.EndpointCategory{
+		types.CategoryAPI, types.CategoryPage, types.CategoryAsset,
+		types.CategoryData, types.CategoryOther,
+	}
+	var parts []string
+	for _, cat := range order {
+		if n, ok := counts[cat]; ok && n > 0 {
+			parts = append(parts, fmt.Sprintf("%d %s", n, cat))
+		}
+	}
+	return strings.Join(parts, ", ")
 }
 
 // ToolDescribeEndpoint describes an endpoint cluster.
