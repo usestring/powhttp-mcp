@@ -10,7 +10,6 @@ import (
 	"github.com/usestring/powhttp-mcp/pkg/contenttype"
 	"github.com/usestring/powhttp-mcp/pkg/graphql"
 	js "github.com/usestring/powhttp-mcp/pkg/jsonschema"
-	"github.com/usestring/powhttp-mcp/pkg/types"
 )
 
 // ---------------------------------------------------------------------------
@@ -29,11 +28,16 @@ type InspectGraphQLOperationInput struct {
 
 // InspectGraphQLOperationOutput is the output for powhttp_inspect_graphql_operation.
 type InspectGraphQLOperationOutput struct {
-	Operations     []any                `json:"operations,omitzero"`
-	ErrorGroups    []graphql.ErrorGroup `json:"error_groups,omitzero"`
+	OperationName  string                `json:"operation_name"`
+	OperationType  string                `json:"operation_type,omitempty"`
+	Query          string                `json:"query,omitempty"`
+	FieldStats     []js.FieldStat        `json:"field_stats,omitempty"`
+	ErrorGroups    []graphql.ErrorGroup  `json:"error_groups,omitzero"`
 	ErrorSummary   *graphql.ErrorSummary `json:"error_summary,omitempty"`
-	EntriesMatched int                  `json:"entries_matched"`
-	Resources      map[string]string    `json:"resources,omitempty"`
+	EntriesMatched int                   `json:"entries_matched"`
+	EntryIDs       []string              `json:"entry_ids,omitempty"`
+	Resources      map[string]string     `json:"resources,omitempty"`
+	Hint           string                `json:"hint,omitempty"`
 }
 
 // inspectSections tracks which sections are requested.
@@ -125,11 +129,10 @@ func ToolInspectGraphQLOperation(d *Deps) func(ctx context.Context, req *sdkmcp.
 			return textResult(msg), InspectGraphQLOperationOutput{}, nil
 		}
 
-		// Run inspect logic (query, variables, response_shape)
-		var inspected []graphql.InspectedOperation
+		// Collect data across matched entries.
+		// canonical captures query/schema/field stats from the first match only.
+		var canonical *graphql.InspectedOperation
 		entriesMatched := 0
-
-		// Run errors logic
 		var errorGroups []graphql.ErrorGroup
 		errSummary := graphql.ErrorSummary{}
 
@@ -151,43 +154,32 @@ func ToolInspectGraphQLOperation(d *Deps) func(ctx context.Context, req *sdkmcp.
 
 				entriesMatched++
 
-				// Inspect logic
-				if sections.needsInspect() {
-					ins := graphql.InspectedOperation{
-						ParsedOperation: op,
-					}
+				// Capture schema data from the first match only
+				if canonical == nil && sections.needsInspect() {
+					ins := graphql.InspectedOperation{ParsedOperation: op}
 
 					if !sections.query {
 						ins.RawQuery = ""
 					}
-
-					// Infer variables schema
 					if sections.variables && op.HasVariables && op.Variables != nil {
-						varBytes, err := json.Marshal(op.Variables)
-						if err == nil {
-							inferred, err := js.Infer(varBytes)
-							if err == nil && inferred != nil {
-								ins.VariablesSchema = inferred.Schema
-							}
+						varBytes, _ := json.Marshal(op.Variables)
+						if inferred, err := js.Infer(varBytes); err == nil && inferred != nil {
+							ins.VariablesSchema = inferred.Schema
 						}
 					}
-
-					// Infer response schema and field stats
 					if sections.responseShape {
 						respBody, respCT, respErr := d.DecodeBody(entry, "response")
 						if respErr == nil && respBody != nil && contenttype.IsJSON(respCT) {
-							inferred, err := js.Infer(respBody)
-							if err == nil && inferred != nil {
+							if inferred, err := js.Infer(respBody); err == nil && inferred != nil {
 								ins.ResponseSchema = inferred.Schema
 								ins.FieldStats = js.ComputeFieldStats(inferred.Schema, [][]byte{respBody})
 							}
 						}
 					}
-
-					inspected = append(inspected, ins)
+					canonical = &ins
 				}
 
-				// Errors logic
+				// Aggregate errors across all entries
 				if sections.errors {
 					errSummary.EntriesChecked++
 
@@ -204,37 +196,31 @@ func ToolInspectGraphQLOperation(d *Deps) func(ctx context.Context, req *sdkmcp.
 						continue
 					}
 
-					hasErrors := len(respData.Errors) > 0
-					if hasErrors {
+					if len(respData.Errors) > 0 {
 						errSummary.EntriesWithErrors++
 						errSummary.TotalErrors += len(respData.Errors)
-
 						isPartial := respData.Data != nil
-						isFullFailure := respData.Data == nil
-
 						if isPartial {
 							errSummary.PartialFailures++
-						}
-						if isFullFailure {
+						} else {
 							errSummary.FullFailures++
 						}
-
 						errorGroups = append(errorGroups, graphql.ErrorGroup{
 							EntryID:       entryID,
 							OperationName: op.Name,
 							Errors:        respData.Errors,
 							IsPartial:     isPartial,
-							IsFullFailure: isFullFailure,
+							IsFullFailure: !isPartial,
 						})
 					}
 				}
 			}
 		}
 
-		// Determine the effective operation name for cache key and resource URIs
+		// Determine the effective operation name
 		opName := input.OperationName
-		if opName == "" && len(inspected) > 0 {
-			opName = inspected[0].Name
+		if opName == "" && canonical != nil {
+			opName = canonical.Name
 		} else if opName == "" && len(errorGroups) > 0 {
 			opName = errorGroups[0].OperationName
 		}
@@ -248,7 +234,7 @@ func ToolInspectGraphQLOperation(d *Deps) func(ctx context.Context, req *sdkmcp.
 			resources["errors"] = fmt.Sprintf("powhttp://graphql/%s/%s/errors", sessionID, opName)
 		}
 
-		// Populate analysis cache
+		// Populate analysis cache (full data for MCP resource handlers)
 		if opName != "" {
 			analysis := &GraphQLAnalysis{
 				SessionID:      sessionID,
@@ -258,43 +244,45 @@ func ToolInspectGraphQLOperation(d *Deps) func(ctx context.Context, req *sdkmcp.
 				ErrorGroups:    errorGroups,
 				ErrorSummary:   errSummary,
 			}
-			if len(inspected) > 0 {
-				analysis.Query = inspected[0].RawQuery
-				analysis.VariablesSchema = inspected[0].VariablesSchema
-				analysis.ResponseSchema = inspected[0].ResponseSchema
-				analysis.FieldStats = inspected[0].FieldStats
+			if canonical != nil {
+				analysis.Query = canonical.RawQuery
+				analysis.VariablesSchema = canonical.VariablesSchema
+				analysis.ResponseSchema = canonical.ResponseSchema
+				analysis.FieldStats = canonical.FieldStats
 			}
 			d.GraphQLAnalysisCache.Store(graphqlAnalysisCacheKey(sessionID, opName), analysis)
 		}
 
-		// Build JSON output
-		var jsonOps []any
-		for _, ins := range inspected {
-			opAny, err := types.ToAny(ins)
-			if err != nil {
-				return nil, InspectGraphQLOperationOutput{}, fmt.Errorf("converting inspected operation: %w", err)
-			}
-			jsonOps = append(jsonOps, opAny)
+		// Build output — single canonical operation, SDK serializes to JSON
+		showIDs := entryIDs
+		if len(showIDs) > 5 {
+			showIDs = showIDs[:5]
 		}
 
 		out := InspectGraphQLOperationOutput{
-			Operations:     jsonOps,
+			OperationName:  opName,
 			EntriesMatched: entriesMatched,
+			EntryIDs:       showIDs,
 			Resources:      resources,
+		}
+		if canonical != nil {
+			out.OperationType = canonical.Type
+			if sections.query {
+				out.Query = canonical.RawQuery
+			}
+			if sections.responseShape {
+				out.FieldStats = canonical.FieldStats
+			}
 		}
 		if sections.errors {
 			out.ErrorGroups = errorGroups
 			out.ErrorSummary = &errSummary
 		}
-
-		// Render markdown
-		renderOpts := renderInspectionOpts{
-			sections:  sections,
-			resources: resources,
+		if len(showIDs) > 0 {
+			out.Hint = fmt.Sprintf("Extract values with query_body(entry_ids=[%q], expression=\".data\").", showIDs[0])
 		}
-		md := renderInspectionText(inspected, errorGroups, errSummary, entryIDs, entriesMatched, renderOpts)
 
-		return hybridResult(md, out), out, nil
+		return nil, out, nil
 	}
 }
 

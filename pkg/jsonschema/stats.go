@@ -137,12 +137,19 @@ func computeSingleFieldStat(path string, schema *jsonschema.Schema, fieldName st
 			continue
 		}
 
-		// Track distinct values and examples
+		// Track distinct values and examples.
+		// Skip collecting examples for objects and arrays — child field stats
+		// describe their structure, so embedding full nested values is redundant.
 		key := fmt.Sprintf("%v", val)
 		if !distinctValues[key] {
 			distinctValues[key] = true
-			if len(examples) < maxExamples {
-				examples = append(examples, val)
+			switch val.(type) {
+			case map[string]any, []any:
+				// count distinct but skip example collection
+			default:
+				if len(examples) < maxExamples {
+					examples = append(examples, val)
+				}
 			}
 		}
 
