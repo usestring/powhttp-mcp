@@ -1,6 +1,5 @@
 package types
 
-import "encoding/json"
 
 // EndpointCategory classifies an endpoint cluster by its role.
 type EndpointCategory string
@@ -100,8 +99,8 @@ type EndpointDescription struct {
 	TypicalHeaders    []HeaderFrequency  `json:"typical_headers"`
 	AuthSignals       AuthSignals        `json:"auth_signals"`
 	QueryKeys         QueryKeyAnalysis   `json:"query_keys"`
-	RequestBodyShape  json.RawMessage `json:"request_body_shape,omitempty"`
-	ResponseBodyShape json.RawMessage `json:"response_body_shape,omitempty"`
+	RequestBodyShape  any `json:"request_body_shape,omitempty"`
+	ResponseBodyShape any `json:"response_body_shape,omitempty"`
 	Examples          []ExampleEntry `json:"examples"`
 }
 
