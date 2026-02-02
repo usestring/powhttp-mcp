@@ -165,6 +165,7 @@ func ToolSurveyGraphQL(d *Deps) func(ctx context.Context, req *sdkmcp.CallToolRe
 			Type string
 		}
 		clusterMap := make(map[clusterKey]*graphql.OperationCluster)
+		varAccums := make(map[clusterKey]*varAccumulator)
 		summary := graphql.TrafficSummary{}
 
 		for _, pe := range parsed {
@@ -211,6 +212,16 @@ func ToolSurveyGraphQL(d *Deps) func(ctx context.Context, req *sdkmcp.CallToolRe
 					cluster.HasVariables = true
 				}
 
+				// Accumulate variable value distribution
+				if op.HasVariables && op.Variables != nil {
+					va := varAccums[key]
+					if va == nil {
+						va = newVarAccumulator()
+						varAccums[key] = va
+					}
+					va.add(op.Variables)
+				}
+
 				// Merge fields
 				fieldSet := make(map[string]bool, len(cluster.Fields))
 				for _, f := range cluster.Fields {
@@ -227,6 +238,13 @@ func ToolSurveyGraphQL(d *Deps) func(ctx context.Context, req *sdkmcp.CallToolRe
 				if len(cluster.EntryIDs) < 5 {
 					cluster.EntryIDs = append(cluster.EntryIDs, pe.entryID)
 				}
+			}
+		}
+
+		// Convert variable accumulators to distributions (top 5 values)
+		for key, va := range varAccums {
+			if c, ok := clusterMap[key]; ok {
+				c.VariableSummary = va.toDistribution(5)
 			}
 		}
 

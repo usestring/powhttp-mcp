@@ -234,6 +234,151 @@ func extractTopLevelFields(s string) []string {
 	return fields
 }
 
+// ExtractFragments scans a GraphQL query string for named fragments
+// (fragment Foo on Bar { ... }) and inline fragments (... on Bar { ... }),
+// returning a list of FragmentInfo.
+func ExtractFragments(query string) []FragmentInfo {
+	var fragments []FragmentInfo
+	i := 0
+
+	for i < len(query) {
+		// Skip string literals
+		if query[i] == '"' {
+			i++
+			for i < len(query) && query[i] != '"' {
+				if query[i] == '\\' {
+					i++ // skip escaped char
+				}
+				i++
+			}
+			if i < len(query) {
+				i++ // closing quote
+			}
+			continue
+		}
+
+		// Skip line comments
+		if query[i] == '#' {
+			for i < len(query) && query[i] != '\n' {
+				i++
+			}
+			continue
+		}
+
+		// Check for named fragment: "fragment Name on Type { ... }"
+		if i+8 < len(query) && query[i:i+8] == "fragment" && (i == 0 || !isIdentChar(query[i-1])) && !isIdentChar(query[i+8]) {
+			i += 8
+			i = skipWS(query, i)
+			// Read fragment name
+			name, end := readIdent(query, i)
+			if name == "" || name == "on" {
+				continue
+			}
+			i = skipWS(query, end)
+			// Expect "on"
+			if i+2 <= len(query) && query[i:i+2] == "on" && (i+2 >= len(query) || !isIdentChar(query[i+2])) {
+				i = skipWS(query, i+2)
+				typeName, end := readIdent(query, i)
+				if typeName != "" {
+					i = end
+					bodyStart := i
+					fields := extractSelectionSetFields(query, &i)
+					fragments = append(fragments, FragmentInfo{
+						Name:   name,
+						OnType: typeName,
+						Fields: fields,
+					})
+					if i > bodyStart {
+						nested := ExtractFragments(query[bodyStart:i])
+						fragments = append(fragments, nested...)
+					}
+				}
+			}
+			continue
+		}
+
+		// Check for inline fragment: "... on Type { ... }"
+		if i+3 <= len(query) && query[i:i+3] == "..." {
+			j := skipWS(query, i+3)
+			if j+2 <= len(query) && query[j:j+2] == "on" && (j+2 >= len(query) || !isIdentChar(query[j+2])) {
+				j = skipWS(query, j+2)
+				typeName, end := readIdent(query, j)
+				if typeName != "" {
+					j = end
+					bodyStart := j
+					fields := extractSelectionSetFields(query, &j)
+					fragments = append(fragments, FragmentInfo{
+						OnType:   typeName,
+						IsInline: true,
+						Fields:   fields,
+					})
+					if j > bodyStart {
+						nested := ExtractFragments(query[bodyStart:j])
+						fragments = append(fragments, nested...)
+					}
+					i = j
+					continue
+				}
+			}
+		}
+
+		i++
+	}
+
+	return fragments
+}
+
+// skipWS advances past whitespace and returns the new position.
+func skipWS(s string, i int) int {
+	for i < len(s) && (s[i] == ' ' || s[i] == '\t' || s[i] == '\n' || s[i] == '\r' || s[i] == ',') {
+		i++
+	}
+	return i
+}
+
+// readIdent reads a GraphQL identifier starting at position i.
+// Returns the identifier and the position after it.
+func readIdent(s string, i int) (string, int) {
+	start := i
+	for i < len(s) && isIdentChar(s[i]) {
+		i++
+	}
+	if i == start {
+		return "", i
+	}
+	return s[start:i], i
+}
+
+// extractSelectionSetFields reads the next selection set { ... } and returns
+// top-level field names. Advances *pos past the closing brace.
+func extractSelectionSetFields(s string, pos *int) []string {
+	i := skipWS(s, *pos)
+	if i >= len(s) || s[i] != '{' {
+		*pos = i
+		return nil
+	}
+
+	// Use the existing field extraction logic
+	fields := extractTopLevelFields(s[i:])
+	// Advance past the selection set
+	depth := 0
+	for i < len(s) {
+		switch s[i] {
+		case '{':
+			depth++
+		case '}':
+			depth--
+			if depth == 0 {
+				*pos = i + 1
+				return fields
+			}
+		}
+		i++
+	}
+	*pos = i
+	return fields
+}
+
 // isIdentChar returns true for characters valid in a GraphQL identifier.
 func isIdentChar(ch byte) bool {
 	return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '_'

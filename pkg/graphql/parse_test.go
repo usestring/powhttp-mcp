@@ -656,3 +656,182 @@ func TestParseError_ErrorsAs(t *testing.T) {
 	assert.Contains(t, pe.Message, "invalid JSON")
 	assert.NotNil(t, pe.Cause) // JSON syntax error
 }
+
+// ---------------------------------------------------------------------------
+// ExtractFragments tests
+// ---------------------------------------------------------------------------
+
+func TestExtractFragments_NamedFragment(t *testing.T) {
+	query := `
+		query GetHero {
+			hero { ...HeroFields }
+		}
+		fragment HeroFields on Character {
+			name
+			appearsIn
+		}
+	`
+	frags := ExtractFragments(query)
+	require.Len(t, frags, 1)
+	assert.Equal(t, "HeroFields", frags[0].Name)
+	assert.Equal(t, "Character", frags[0].OnType)
+	assert.False(t, frags[0].IsInline)
+	assert.Contains(t, frags[0].Fields, "name")
+	assert.Contains(t, frags[0].Fields, "appearsIn")
+}
+
+func TestExtractFragments_InlineFragment(t *testing.T) {
+	query := `
+		query GetHero {
+			hero {
+				__typename
+				... on Human { height }
+				... on Droid { primaryFunction }
+			}
+		}
+	`
+	frags := ExtractFragments(query)
+	require.Len(t, frags, 2)
+
+	assert.Equal(t, "Human", frags[0].OnType)
+	assert.True(t, frags[0].IsInline)
+	assert.Contains(t, frags[0].Fields, "height")
+
+	assert.Equal(t, "Droid", frags[1].OnType)
+	assert.True(t, frags[1].IsInline)
+	assert.Contains(t, frags[1].Fields, "primaryFunction")
+}
+
+func TestExtractFragments_MixedFragments(t *testing.T) {
+	query := `
+		query Search {
+			search(text: "foo") {
+				... on User { username }
+				... on Post { title }
+				...SharedFields
+			}
+		}
+		fragment SharedFields on SearchResult {
+			id
+			score
+		}
+	`
+	frags := ExtractFragments(query)
+	require.Len(t, frags, 3)
+
+	// Inline fragments
+	assert.Equal(t, "User", frags[0].OnType)
+	assert.True(t, frags[0].IsInline)
+	assert.Equal(t, "Post", frags[1].OnType)
+	assert.True(t, frags[1].IsInline)
+
+	// Named fragment
+	assert.Equal(t, "SharedFields", frags[2].Name)
+	assert.Equal(t, "SearchResult", frags[2].OnType)
+	assert.False(t, frags[2].IsInline)
+}
+
+func TestExtractFragments_NoFragments(t *testing.T) {
+	query := `query GetUser { user { id name } }`
+	frags := ExtractFragments(query)
+	assert.Empty(t, frags)
+}
+
+func TestExtractFragments_EmptyQuery(t *testing.T) {
+	frags := ExtractFragments("")
+	assert.Empty(t, frags)
+}
+
+func TestExtractFragments_NestedInlineFragments(t *testing.T) {
+	query := `
+		query GetHero {
+			hero {
+				... on Human {
+					name
+					... on AdminUser { role permissions }
+				}
+				... on Droid { primaryFunction }
+			}
+		}
+	`
+	frags := ExtractFragments(query)
+	require.Len(t, frags, 3)
+
+	assert.Equal(t, "Human", frags[0].OnType)
+	assert.True(t, frags[0].IsInline)
+	assert.Contains(t, frags[0].Fields, "name")
+
+	assert.Equal(t, "AdminUser", frags[1].OnType)
+	assert.True(t, frags[1].IsInline)
+	assert.Contains(t, frags[1].Fields, "role")
+	assert.Contains(t, frags[1].Fields, "permissions")
+
+	assert.Equal(t, "Droid", frags[2].OnType)
+	assert.True(t, frags[2].IsInline)
+	assert.Contains(t, frags[2].Fields, "primaryFunction")
+}
+
+func TestExtractFragments_NestedInNamedFragment(t *testing.T) {
+	query := `
+		fragment CharFields on Character {
+			name
+			... on Human { height }
+			... on Droid { primaryFunction }
+		}
+	`
+	frags := ExtractFragments(query)
+	require.Len(t, frags, 3)
+
+	assert.Equal(t, "CharFields", frags[0].Name)
+	assert.Equal(t, "Character", frags[0].OnType)
+	assert.False(t, frags[0].IsInline)
+	assert.Contains(t, frags[0].Fields, "name")
+
+	assert.Equal(t, "Human", frags[1].OnType)
+	assert.True(t, frags[1].IsInline)
+	assert.Contains(t, frags[1].Fields, "height")
+
+	assert.Equal(t, "Droid", frags[2].OnType)
+	assert.True(t, frags[2].IsInline)
+	assert.Contains(t, frags[2].Fields, "primaryFunction")
+}
+
+func TestExtractFragments_DeeplyNestedInlineFragments(t *testing.T) {
+	query := `
+		query GetNode {
+			node {
+				... on User {
+					... on AdminUser {
+						... on SuperAdmin { superPower }
+					}
+				}
+			}
+		}
+	`
+	frags := ExtractFragments(query)
+	require.Len(t, frags, 3)
+
+	assert.Equal(t, "User", frags[0].OnType)
+	assert.Equal(t, "AdminUser", frags[1].OnType)
+	assert.Equal(t, "SuperAdmin", frags[2].OnType)
+	assert.Contains(t, frags[2].Fields, "superPower")
+}
+
+func TestExtractFragments_MultipleNamedFragments(t *testing.T) {
+	query := `
+		fragment UserFields on User {
+			id
+			name
+		}
+		fragment PostFields on Post {
+			title
+			body
+		}
+	`
+	frags := ExtractFragments(query)
+	require.Len(t, frags, 2)
+	assert.Equal(t, "UserFields", frags[0].Name)
+	assert.Equal(t, "User", frags[0].OnType)
+	assert.Equal(t, "PostFields", frags[1].Name)
+	assert.Equal(t, "Post", frags[1].OnType)
+}
