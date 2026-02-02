@@ -22,39 +22,49 @@ type InspectGraphQLOperationInput struct {
 	EntryIDs      []string `json:"entry_ids,omitempty" jsonschema:"Entry IDs to inspect. When both entry_ids and operation_name are provided, only the named operation within the given entries is inspected. Either entry_ids or operation_name is required."`
 	OperationName string   `json:"operation_name,omitempty" jsonschema:"GraphQL operation name to find and inspect. Either entry_ids or operation_name is required."`
 	Host          string   `json:"host,omitempty" jsonschema:"Filter search by host (used with operation_name; ignored when entry_ids is provided). Prefix with '*.' to include subdomains (e.g., '*.example.com'). Prefer '*.domain' to capture all related traffic."`
-	Sections      []string `json:"sections,omitempty" jsonschema:"Which sections to include: query, variables, response_shape, errors. Default: all four."`
+	Sections      []string `json:"sections,omitempty" jsonschema:"Which sections to include: query, variables, response_shape, errors, fragment_warnings, fragment_coverage, response_variants. Default: all."`
 	MaxEntries    int      `json:"max_entries,omitempty" jsonschema:"Max entries to inspect (default: 20, max: 100)"`
 }
 
 // InspectGraphQLOperationOutput is the output for powhttp_inspect_graphql_operation.
 type InspectGraphQLOperationOutput struct {
-	OperationName  string                `json:"operation_name"`
-	OperationType  string                `json:"operation_type,omitempty"`
-	Query          string                `json:"query,omitempty"`
-	FieldStats     []js.FieldStat        `json:"field_stats,omitempty"`
-	ErrorGroups    []graphql.ErrorGroup  `json:"error_groups,omitzero"`
-	ErrorSummary   *graphql.ErrorSummary `json:"error_summary,omitempty"`
-	EntriesMatched int                   `json:"entries_matched"`
-	EntryIDs       []string              `json:"entry_ids,omitempty"`
-	Resources      map[string]string     `json:"resources,omitempty"`
-	Hint           string                `json:"hint,omitempty"`
+	OperationName        string                                  `json:"operation_name"`
+	OperationType        string                                  `json:"operation_type,omitempty"`
+	Query                string                                  `json:"query,omitempty"`
+	FieldStats           []js.FieldStat                          `json:"field_stats,omitempty"`
+	VariableDistribution map[string]graphql.VariableDistribution `json:"variable_distribution,omitempty"`
+	FragmentWarnings     []graphql.FragmentWarning               `json:"fragment_warnings,omitzero"`
+	FragmentCoverage     *graphql.FragmentCoverage               `json:"fragment_coverage,omitempty"`
+	ResponseVariants     *graphql.ResponseVariants               `json:"response_variants,omitempty"`
+	ErrorGroups          []graphql.ErrorGroup                    `json:"error_groups,omitzero"`
+	ErrorSummary         *graphql.ErrorSummary                   `json:"error_summary,omitempty"`
+	EntriesMatched       int                                     `json:"entries_matched"`
+	EntryIDs             []string                                `json:"entry_ids,omitempty"`
+	Resources            map[string]string                       `json:"resources,omitempty"`
+	Hint                 string                                  `json:"hint,omitempty"`
 }
 
 // inspectSections tracks which sections are requested.
 type inspectSections struct {
-	query         bool
-	variables     bool
-	responseShape bool
-	errors        bool
+	query            bool
+	variables        bool
+	responseShape    bool
+	errors           bool
+	fragmentWarnings bool
+	fragmentCoverage bool
+	responseVariants bool
 }
 
 // allSections returns an inspectSections with everything enabled.
 func allSections() inspectSections {
 	return inspectSections{
-		query:         true,
-		variables:     true,
-		responseShape: true,
-		errors:        true,
+		query:            true,
+		variables:        true,
+		responseShape:    true,
+		errors:           true,
+		fragmentWarnings: true,
+		fragmentCoverage: true,
+		responseVariants: true,
 	}
 }
 
@@ -75,11 +85,22 @@ func parseSections(input []string) (inspectSections, error) {
 			s.responseShape = true
 		case "errors":
 			s.errors = true
+		case "fragment_warnings":
+			s.fragmentWarnings = true
+		case "fragment_coverage":
+			s.fragmentCoverage = true
+		case "response_variants":
+			s.responseVariants = true
 		default:
-			return s, ErrInvalidInput(fmt.Sprintf("invalid section %q: valid values are query, variables, response_shape, errors", v))
+			return s, ErrInvalidInput(fmt.Sprintf("invalid section %q: valid values are query, variables, response_shape, errors, fragment_warnings, fragment_coverage, response_variants", v))
 		}
 	}
 	return s, nil
+}
+
+// needsResponseBodies returns true if any section needs decoded response bodies.
+func (s inspectSections) needsResponseBodies() bool {
+	return s.fragmentWarnings || s.fragmentCoverage || s.responseVariants
 }
 
 // needsInspect returns true if any inspect-related section is requested.
@@ -135,6 +156,10 @@ func ToolInspectGraphQLOperation(d *Deps) func(ctx context.Context, req *sdkmcp.
 		entriesMatched := 0
 		var errorGroups []graphql.ErrorGroup
 		errSummary := graphql.ErrorSummary{}
+		varAccum := newVarAccumulator()
+		var fragmentBodies [][]byte
+		fragmentBodySeen := make(map[string]bool)
+		var entryShapes []entryShape
 
 		for _, entryID := range entryIDs {
 			entry, err := d.FetchEntry(ctx, sessionID, entryID)
@@ -153,6 +178,34 @@ func ToolInspectGraphQLOperation(d *Deps) func(ctx context.Context, req *sdkmcp.
 				}
 
 				entriesMatched++
+
+				// Accumulate variable distribution across all entries
+				if sections.variables && op.HasVariables && op.Variables != nil {
+					varAccum.add(op.Variables)
+				}
+
+				// Collect response body for fragment analysis and variant detection (one per entry)
+				if sections.needsResponseBodies() && !fragmentBodySeen[entryID] {
+					fragmentBodySeen[entryID] = true
+					respBody, respCT, respErr := d.DecodeBody(entry, "response")
+					if respErr == nil && respBody != nil && contenttype.IsJSON(respCT) {
+						fragmentBodies = append(fragmentBodies, respBody)
+
+						// Build entry shape for variant detection
+						if sections.responseVariants {
+							fp, keys := responseShapeFingerprint(respBody)
+							if fp != "" {
+								vars, _ := op.Variables.(map[string]any)
+								entryShapes = append(entryShapes, entryShape{
+									entryID:   entryID,
+									shapeKey:  fp,
+									shapeKeys: keys,
+									variables: vars,
+								})
+							}
+						}
+					}
+				}
 
 				// Capture schema data from the first match only
 				if canonical == nil && sections.needsInspect() {
@@ -217,6 +270,30 @@ func ToolInspectGraphQLOperation(d *Deps) func(ctx context.Context, req *sdkmcp.
 			}
 		}
 
+		// Convert variable accumulator to distribution (higher cap for inspect)
+		var varDist map[string]graphql.VariableDistribution
+		if sections.variables {
+			varDist = varAccum.toDistribution(20)
+		}
+
+		// Detect missing fragments from response bodies
+		var fragWarnings []graphql.FragmentWarning
+		if sections.fragmentWarnings && len(fragmentBodies) > 0 {
+			fragWarnings = detectFragmentWarnings(fragmentBodies)
+		}
+
+		// Compute fragment coverage matrix
+		var fragCoverage *graphql.FragmentCoverage
+		if sections.fragmentCoverage && canonical != nil && canonical.RawQuery != "" && len(fragmentBodies) > 0 {
+			fragCoverage = computeFragmentCoverage(canonical.RawQuery, fragmentBodies)
+		}
+
+		// Compute response shape variants
+		var respVariants *graphql.ResponseVariants
+		if sections.responseVariants && len(entryShapes) >= 2 {
+			respVariants = computeResponseVariants(entryShapes)
+		}
+
 		// Determine the effective operation name
 		opName := input.OperationName
 		if opName == "" && canonical != nil {
@@ -237,12 +314,13 @@ func ToolInspectGraphQLOperation(d *Deps) func(ctx context.Context, req *sdkmcp.
 		// Populate analysis cache (full data for MCP resource handlers)
 		if opName != "" {
 			analysis := &GraphQLAnalysis{
-				SessionID:      sessionID,
-				OperationName:  opName,
-				EntryIDs:       entryIDs,
-				EntriesMatched: entriesMatched,
-				ErrorGroups:    errorGroups,
-				ErrorSummary:   errSummary,
+				SessionID:            sessionID,
+				OperationName:        opName,
+				EntryIDs:             entryIDs,
+				EntriesMatched:       entriesMatched,
+				ErrorGroups:          errorGroups,
+				ErrorSummary:         errSummary,
+				VariableDistribution: varDist,
 			}
 			if canonical != nil {
 				analysis.Query = canonical.RawQuery
@@ -260,10 +338,14 @@ func ToolInspectGraphQLOperation(d *Deps) func(ctx context.Context, req *sdkmcp.
 		}
 
 		out := InspectGraphQLOperationOutput{
-			OperationName:  opName,
-			EntriesMatched: entriesMatched,
-			EntryIDs:       showIDs,
-			Resources:      resources,
+			OperationName:        opName,
+			EntriesMatched:       entriesMatched,
+			EntryIDs:             showIDs,
+			Resources:            resources,
+			VariableDistribution: varDist,
+			FragmentWarnings:     fragWarnings,
+			FragmentCoverage:     fragCoverage,
+			ResponseVariants:     respVariants,
 		}
 		if canonical != nil {
 			out.OperationType = canonical.Type
@@ -301,6 +383,7 @@ func runGraphQLAnalysis(ctx context.Context, d *Deps, sessionID, operationName s
 	}
 
 	errSummary := graphql.ErrorSummary{}
+	varAccum := newVarAccumulator()
 
 	for _, entryID := range entryIDs {
 		entry, err := d.FetchEntry(ctx, sessionID, entryID)
@@ -322,6 +405,11 @@ func runGraphQLAnalysis(ctx context.Context, d *Deps, sessionID, operationName s
 			// Capture query from first match
 			if analysis.Query == "" {
 				analysis.Query = op.RawQuery
+			}
+
+			// Accumulate variable distribution across all entries
+			if op.HasVariables && op.Variables != nil {
+				varAccum.add(op.Variables)
 			}
 
 			// Variables schema from first match
@@ -385,6 +473,7 @@ func runGraphQLAnalysis(ctx context.Context, d *Deps, sessionID, operationName s
 	}
 
 	analysis.ErrorSummary = errSummary
+	analysis.VariableDistribution = varAccum.toDistribution(20)
 
 	// Cache for future requests
 	d.GraphQLAnalysisCache.Store(graphqlAnalysisCacheKey(sessionID, operationName), analysis)
