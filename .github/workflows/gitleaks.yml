@@ -6,6 +6,13 @@ on:
   push:
     branches: [main]
 
+concurrency:
+  # A new push to a pull request supersedes the run already in flight, and
+  # nothing downstream waits on the older one. Push events are exempt: a push
+  # run is the record that a given commit passed, so it always finishes.
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   gitleaks:
     if: ${{ !contains(github.event.pull_request.labels.*.name, 'no_gha') }}
